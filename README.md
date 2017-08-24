@@ -20,7 +20,7 @@ end
 
 ## 使用方法
 ```objective-c
-#import <WiseBle/WiseBle.h>
+#import <wiseBle/WiseBle.h>
 ```
 
 ### WWBluetoothLEManagerData 蓝牙管理数据代理；当不需要预处理发送数据与接收数据时可不实现该代理
