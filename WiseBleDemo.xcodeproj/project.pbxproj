@@ -14,11 +14,11 @@
 		E934854C1EA9D8F80058CDA0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E934854B1EA9D8F80058CDA0 /* Assets.xcassets */; };
 		E934854F1EA9D8F80058CDA0 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = E934854D1EA9D8F80058CDA0 /* LaunchScreen.storyboard */; };
 		E93DE4791F4ACBF1001503F4 /* WiseBleData.m in Sources */ = {isa = PBXBuildFile; fileRef = E93DE4781F4ACBF1001503F4 /* WiseBleData.m */; };
-		E94799961F4E9EF40073C643 /* NSData+String.m in Sources */ = {isa = PBXBuildFile; fileRef = E947998D1F4E9EF40073C643 /* NSData+String.m */; };
-		E94799971F4E9EF40073C643 /* NSString+Hex.m in Sources */ = {isa = PBXBuildFile; fileRef = E947998F1F4E9EF40073C643 /* NSString+Hex.m */; };
-		E94799981F4E9EF40073C643 /* WWBluetoothLE.m in Sources */ = {isa = PBXBuildFile; fileRef = E94799911F4E9EF40073C643 /* WWBluetoothLE.m */; };
-		E94799991F4E9EF40073C643 /* WWCharacteristic.m in Sources */ = {isa = PBXBuildFile; fileRef = E94799931F4E9EF40073C643 /* WWCharacteristic.m */; };
-		E947999A1F4E9EF40073C643 /* WWWaitEvent.m in Sources */ = {isa = PBXBuildFile; fileRef = E94799951F4E9EF40073C643 /* WWWaitEvent.m */; };
+		E94799A91F4EB8470073C643 /* NSData+String.m in Sources */ = {isa = PBXBuildFile; fileRef = E94799A01F4EB8470073C643 /* NSData+String.m */; };
+		E94799AA1F4EB8470073C643 /* NSString+Hex.m in Sources */ = {isa = PBXBuildFile; fileRef = E94799A21F4EB8470073C643 /* NSString+Hex.m */; };
+		E94799AB1F4EB8470073C643 /* WWBluetoothLE.m in Sources */ = {isa = PBXBuildFile; fileRef = E94799A41F4EB8470073C643 /* WWBluetoothLE.m */; };
+		E94799AC1F4EB8470073C643 /* WWCharacteristic.m in Sources */ = {isa = PBXBuildFile; fileRef = E94799A61F4EB8470073C643 /* WWCharacteristic.m */; };
+		E94799AD1F4EB8470073C643 /* WWWaitEvent.m in Sources */ = {isa = PBXBuildFile; fileRef = E94799A81F4EB8470073C643 /* WWWaitEvent.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -34,16 +34,17 @@
 		E93485501EA9D8F80058CDA0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		E93DE4771F4ACBF1001503F4 /* WiseBleData.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = WiseBleData.h; sourceTree = "<group>"; };
 		E93DE4781F4ACBF1001503F4 /* WiseBleData.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = WiseBleData.m; sourceTree = "<group>"; };
-		E947998C1F4E9EF40073C643 /* NSData+String.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSData+String.h"; sourceTree = "<group>"; };
-		E947998D1F4E9EF40073C643 /* NSData+String.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSData+String.m"; sourceTree = "<group>"; };
-		E947998E1F4E9EF40073C643 /* NSString+Hex.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSString+Hex.h"; sourceTree = "<group>"; };
-		E947998F1F4E9EF40073C643 /* NSString+Hex.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSString+Hex.m"; sourceTree = "<group>"; };
-		E94799901F4E9EF40073C643 /* WWBluetoothLE.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = WWBluetoothLE.h; sourceTree = "<group>"; };
-		E94799911F4E9EF40073C643 /* WWBluetoothLE.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = WWBluetoothLE.m; sourceTree = "<group>"; };
-		E94799921F4E9EF40073C643 /* WWCharacteristic.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = WWCharacteristic.h; sourceTree = "<group>"; };
-		E94799931F4E9EF40073C643 /* WWCharacteristic.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = WWCharacteristic.m; sourceTree = "<group>"; };
-		E94799941F4E9EF40073C643 /* WWWaitEvent.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = WWWaitEvent.h; sourceTree = "<group>"; };
-		E94799951F4E9EF40073C643 /* WWWaitEvent.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = WWWaitEvent.m; sourceTree = "<group>"; };
+		E947999F1F4EB8470073C643 /* NSData+String.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSData+String.h"; sourceTree = "<group>"; };
+		E94799A01F4EB8470073C643 /* NSData+String.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSData+String.m"; sourceTree = "<group>"; };
+		E94799A11F4EB8470073C643 /* NSString+Hex.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSString+Hex.h"; sourceTree = "<group>"; };
+		E94799A21F4EB8470073C643 /* NSString+Hex.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSString+Hex.m"; sourceTree = "<group>"; };
+		E94799A31F4EB8470073C643 /* WWBluetoothLE.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = WWBluetoothLE.h; sourceTree = "<group>"; };
+		E94799A41F4EB8470073C643 /* WWBluetoothLE.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = WWBluetoothLE.m; sourceTree = "<group>"; };
+		E94799A51F4EB8470073C643 /* WWCharacteristic.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = WWCharacteristic.h; sourceTree = "<group>"; };
+		E94799A61F4EB8470073C643 /* WWCharacteristic.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = WWCharacteristic.m; sourceTree = "<group>"; };
+		E94799A71F4EB8470073C643 /* WWWaitEvent.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = WWWaitEvent.h; sourceTree = "<group>"; };
+		E94799A81F4EB8470073C643 /* WWWaitEvent.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = WWWaitEvent.m; sourceTree = "<group>"; };
+		E94799AE1F4EB8550073C643 /* WiseBle.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WiseBle.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -76,7 +77,7 @@
 		E934853E1EA9D8F80058CDA0 /* WiseBleDemo */ = {
 			isa = PBXGroup;
 			children = (
-				E947998A1F4E9EF40073C643 /* wiseBle */,
+				E947999D1F4EB8470073C643 /* WiseBle */,
 				E93485421EA9D8F80058CDA0 /* AppDelegate.h */,
 				E93485431EA9D8F80058CDA0 /* AppDelegate.m */,
 				E93485451EA9D8F80058CDA0 /* ViewController.h */,
@@ -100,27 +101,28 @@
 			name = "Supporting Files";
 			sourceTree = "<group>";
 		};
-		E947998A1F4E9EF40073C643 /* wiseBle */ = {
+		E947999D1F4EB8470073C643 /* WiseBle */ = {
 			isa = PBXGroup;
 			children = (
-				E947998B1F4E9EF40073C643 /* category */,
-				E94799901F4E9EF40073C643 /* WWBluetoothLE.h */,
-				E94799911F4E9EF40073C643 /* WWBluetoothLE.m */,
-				E94799921F4E9EF40073C643 /* WWCharacteristic.h */,
-				E94799931F4E9EF40073C643 /* WWCharacteristic.m */,
-				E94799941F4E9EF40073C643 /* WWWaitEvent.h */,
-				E94799951F4E9EF40073C643 /* WWWaitEvent.m */,
+				E947999E1F4EB8470073C643 /* category */,
+				E94799A31F4EB8470073C643 /* WWBluetoothLE.h */,
+				E94799A41F4EB8470073C643 /* WWBluetoothLE.m */,
+				E94799A51F4EB8470073C643 /* WWCharacteristic.h */,
+				E94799A61F4EB8470073C643 /* WWCharacteristic.m */,
+				E94799A71F4EB8470073C643 /* WWWaitEvent.h */,
+				E94799A81F4EB8470073C643 /* WWWaitEvent.m */,
+				E94799AE1F4EB8550073C643 /* WiseBle.h */,
 			);
-			path = wiseBle;
+			path = WiseBle;
 			sourceTree = SOURCE_ROOT;
 		};
-		E947998B1F4E9EF40073C643 /* category */ = {
+		E947999E1F4EB8470073C643 /* category */ = {
 			isa = PBXGroup;
 			children = (
-				E947998C1F4E9EF40073C643 /* NSData+String.h */,
-				E947998D1F4E9EF40073C643 /* NSData+String.m */,
-				E947998E1F4E9EF40073C643 /* NSString+Hex.h */,
-				E947998F1F4E9EF40073C643 /* NSString+Hex.m */,
+				E947999F1F4EB8470073C643 /* NSData+String.h */,
+				E94799A01F4EB8470073C643 /* NSData+String.m */,
+				E94799A11F4EB8470073C643 /* NSString+Hex.h */,
+				E94799A21F4EB8470073C643 /* NSString+Hex.m */,
 			);
 			path = category;
 			sourceTree = "<group>";
@@ -198,13 +200,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				E93485471EA9D8F80058CDA0 /* ViewController.m in Sources */,
-				E947999A1F4E9EF40073C643 /* WWWaitEvent.m in Sources */,
-				E94799971F4E9EF40073C643 /* NSString+Hex.m in Sources */,
-				E94799981F4E9EF40073C643 /* WWBluetoothLE.m in Sources */,
+				E94799AD1F4EB8470073C643 /* WWWaitEvent.m in Sources */,
+				E94799AA1F4EB8470073C643 /* NSString+Hex.m in Sources */,
+				E94799AB1F4EB8470073C643 /* WWBluetoothLE.m in Sources */,
 				E93485441EA9D8F80058CDA0 /* AppDelegate.m in Sources */,
-				E94799991F4E9EF40073C643 /* WWCharacteristic.m in Sources */,
+				E94799AC1F4EB8470073C643 /* WWCharacteristic.m in Sources */,
 				E93485411EA9D8F80058CDA0 /* main.m in Sources */,
-				E94799961F4E9EF40073C643 /* NSData+String.m in Sources */,
+				E94799A91F4EB8470073C643 /* NSData+String.m in Sources */,
 				E93DE4791F4ACBF1001503F4 /* WiseBleData.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

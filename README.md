@@ -1,8 +1,30 @@
 # WiseBle
 ## 蓝牙操作的类库
 
-### WWBluetoothLEManagerData 蓝牙管理数据代理
-``` javascript 
+## 安装
+
+### CocoaPods
+要使用CocoaPods安装wiseBle，请将其集成到您现有的Podfile中，或创建一个新的Podfile:
+
+```ruby
+target 'MyApp' do
+  pod 'wiseBle'
+end
+```
+然后 `pod install`.
+
+### 手动
+
+将WiseBle文件夹添加到项目中
+
+
+## 使用方法
+```objective-c
+#import <WiseBle/WiseBle.h>
+```
+
+### WWBluetoothLEManagerData 蓝牙管理数据代理；当不需要预处理发送数据与接收数据时可不实现该代理
+``` objective-c 
 /**
  *  下发数据预处理 会在发送数据之前调用该函数预处理
  *
@@ -30,7 +52,7 @@
 
 ### WWBluetoothLEManagerDelegate 蓝牙管理代理
 
-``` javascript 
+``` objective-c 
 /**
  *  蓝牙状态，仅在本地蓝牙状态为开启时, 即WWBleLocalStatePowerOn，其他函数方可使用
  *
@@ -55,7 +77,7 @@
 
 ### WWBluetoothLEDelegate 蓝牙连接后代理
   
-``` javascript 
+``` objective-c 
 
 /**
  *  蓝牙链接回调
@@ -125,3 +147,7 @@
 - (void)ble:(WWBluetoothLE *)ble didUpdateRssi:(CBPeripheral *)peripheral rssi:(NSNumber *)rssi result:(BOOL)isSuccess;
 
 ```
+
+## 其他
+
+### 微信小程序蓝牙例子见 https://github.com/diaoerlangdang/wechat-BleDemo
