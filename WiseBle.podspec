@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
 s.name = 'wiseBle'
-s.version = '1.0.1'
+s.version = '1.0.2'
 s.license = 'GPL-2.0'
 s.summary = '蓝牙操作的类库'
 s.homepage = 'https://github.com/diaoerlangdang/WiseBle'

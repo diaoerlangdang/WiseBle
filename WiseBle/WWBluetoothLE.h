@@ -270,6 +270,14 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
 - (void)disconnect:(CBPeripheral *)peripheral;
 
 
+/**
+ *  断开连接
+ *
+ *  @param peripheral           蓝牙设备
+ *  @param isCallBack           是否进入回调  ble:didDisconnect:
+ */
+- (void)disconnect:(CBPeripheral *)peripheral callBack:(BOOL)isCallBack;
+
 
 /**
  *  获取所有的特征值

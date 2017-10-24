@@ -233,7 +233,9 @@ BOOL ble_isOpenLog = false;
     if (peripheral == nil) {
         BLELog(@"设备不能为空");
         if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
-            [_bleDelegate ble:self didConnect:nil result:false];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [_bleDelegate ble:self didConnect:nil result:false];
+            });
         }
         return ;
     }
@@ -254,6 +256,19 @@ BOOL ble_isOpenLog = false;
 -(void)disconnect:(CBPeripheral *)peripheral
 {
     _isMyDisconnected = true;
+    
+    [_centeralManager cancelPeripheralConnection:peripheral];
+}
+
+/**
+ *  断开连接
+ *
+ *  @param peripheral           蓝牙设备
+ *  @param isCallBack           是否进入回调  ble:didDisconnect:
+ */
+- (void)disconnect:(CBPeripheral *)peripheral callBack:(BOOL)isCallBack
+{
+    _isMyDisconnected = false;
     
     [_centeralManager cancelPeripheralConnection:peripheral];
 }
@@ -787,7 +802,9 @@ BOOL ble_isOpenLog = false;
                 
                 if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
                     
-                    [_bleDelegate ble:self didConnect:peripheral result:true];
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                       [_bleDelegate ble:self didConnect:peripheral result:true];
+                    });
                 }
             }
             
@@ -803,7 +820,10 @@ BOOL ble_isOpenLog = false;
             
             if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
                 
-                [_bleDelegate ble:self didConnect:peripheral result:false];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [_bleDelegate ble:self didConnect:peripheral result:false];
+                });
+                
             }
         }
     }
@@ -829,7 +849,9 @@ BOOL ble_isOpenLog = false;
             
             if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didNotify:characteristic:enable:result:)]) {
                 
-                [_bleDelegate ble:self didNotify:peripheral characteristic:charact enable:characteristic.isNotifying result:true];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [_bleDelegate ble:self didNotify:peripheral characteristic:charact enable:characteristic.isNotifying result:true];
+                });
             }
         }
         
@@ -848,7 +870,9 @@ BOOL ble_isOpenLog = false;
             
             if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didNotify:characteristic:enable:result:)]) {
                 
-                [_bleDelegate ble:self didNotify:peripheral characteristic:charact enable:characteristic.isNotifying result:false];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [_bleDelegate ble:self didNotify:peripheral characteristic:charact enable:characteristic.isNotifying result:false];
+                });
             }
         }
     }
@@ -884,8 +908,9 @@ BOOL ble_isOpenLog = false;
                     
                     if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didReceiveData:characteristic:data:)]) {
                         
-                        [_bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:_recvData];
-                        
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                            [_bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:_recvData];
+                        });
                     }
                     
                 }
@@ -904,7 +929,10 @@ BOOL ble_isOpenLog = false;
                 
                 if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didReceiveData:characteristic:data:)]) {
                     
-                    [_bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:characteristic.value];
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [_bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:characteristic.value];
+                    });
+                    
                     
                 }
                 
@@ -929,7 +957,9 @@ BOOL ble_isOpenLog = false;
         if (_hasSendGroup == _totalSendGroup) {
             if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didSendData:characteristic:result:)]) {
                 
-                [_bleDelegate ble:self didSendData:peripheral characteristic:charact result:true];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [_bleDelegate ble:self didSendData:peripheral characteristic:charact result:true];
+                });
             }
         }
     }
@@ -939,7 +969,9 @@ BOOL ble_isOpenLog = false;
         
         if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didSendData:characteristic:result:)]) {
             
-            [_bleDelegate ble:self didSendData:peripheral characteristic:charact result:false];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [_bleDelegate ble:self didSendData:peripheral characteristic:charact result:false];
+            });
         }
     }
 }
@@ -950,13 +982,17 @@ BOOL ble_isOpenLog = false;
         
         if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didUpdateRssi:rssi:result:)]) {
             
-            [_bleDelegate ble:self didUpdateRssi:peripheral rssi:RSSI result:true];
+            dispatch_async(dispatch_get_main_queue(), ^{
+               [_bleDelegate ble:self didUpdateRssi:peripheral rssi:RSSI result:true];
+            });
         }
     }
     else {
         if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didUpdateRssi:rssi:result:)]) {
             
-            [_bleDelegate ble:self didUpdateRssi:peripheral rssi:RSSI result:false];
+            dispatch_async(dispatch_get_main_queue(), ^{
+               [_bleDelegate ble:self didUpdateRssi:peripheral rssi:RSSI result:false];
+            });
         }
     }
 }
