@@ -159,13 +159,10 @@ BOOL ble_isOpenLog = false;
         [_centeralManager scanForPeripheralsWithServices:uuids options:@{CBCentralManagerScanOptionAllowDuplicatesKey:@(true)}];
     }
     
+    _isScanning = true;
+    
+    
     return YES;
-}
-
-//是否在扫描
-- (BOOL)isScanning
-{
-    return _centeralManager.isScanning;
 }
 
 
@@ -176,6 +173,7 @@ BOOL ble_isOpenLog = false;
 -(void)stopScan
 {
     [_centeralManager stopScan];
+    _isScanning = false;
 }
 
 /**
@@ -234,7 +232,7 @@ BOOL ble_isOpenLog = false;
         BLELog(@"设备不能为空");
         if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                [_bleDelegate ble:self didConnect:nil result:false];
+                [self.bleDelegate ble:self didConnect:nil result:false];
             });
         }
         return ;
@@ -777,7 +775,7 @@ BOOL ble_isOpenLog = false;
     }
     if([self.managerDelegate respondsToSelector:@selector(ble:didLocalState:)]) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self.managerDelegate ble:self didLocalState:_loaclState];
+            [self.managerDelegate ble:self didLocalState:self.loaclState];
         });
     }
 }
@@ -864,7 +862,7 @@ BOOL ble_isOpenLog = false;
                 if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
                     
                     dispatch_async(dispatch_get_main_queue(), ^{
-                       [_bleDelegate ble:self didConnect:peripheral result:true];
+                       [self.bleDelegate ble:self didConnect:peripheral result:true];
                     });
                 }
             }
@@ -882,7 +880,7 @@ BOOL ble_isOpenLog = false;
             if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
                 
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [_bleDelegate ble:self didConnect:peripheral result:false];
+                    [self.bleDelegate ble:self didConnect:peripheral result:false];
                 });
                 
             }
@@ -911,7 +909,7 @@ BOOL ble_isOpenLog = false;
             if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didNotify:characteristic:enable:result:)]) {
                 
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [_bleDelegate ble:self didNotify:peripheral characteristic:charact enable:characteristic.isNotifying result:true];
+                    [self.bleDelegate ble:self didNotify:peripheral characteristic:charact enable:characteristic.isNotifying result:true];
                 });
             }
         }
@@ -932,7 +930,7 @@ BOOL ble_isOpenLog = false;
             if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didNotify:characteristic:enable:result:)]) {
                 
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [_bleDelegate ble:self didNotify:peripheral characteristic:charact enable:characteristic.isNotifying result:false];
+                    [self.bleDelegate ble:self didNotify:peripheral characteristic:charact enable:characteristic.isNotifying result:false];
                 });
             }
         }
@@ -969,8 +967,10 @@ BOOL ble_isOpenLog = false;
                     
                     if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didReceiveData:characteristic:data:)]) {
                         
+                        //接收数据
+                        NSMutableData *recvData = _recvData;
                         dispatch_async(dispatch_get_main_queue(), ^{
-                            [_bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:_recvData];
+                            [self.bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:recvData];
                         });
                     }
                     
@@ -991,7 +991,7 @@ BOOL ble_isOpenLog = false;
                 if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didReceiveData:characteristic:data:)]) {
                     
                     dispatch_async(dispatch_get_main_queue(), ^{
-                        [_bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:characteristic.value];
+                        [self.bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:characteristic.value];
                     });
                     
                     
@@ -1019,7 +1019,7 @@ BOOL ble_isOpenLog = false;
             if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didSendData:characteristic:result:)]) {
                 
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [_bleDelegate ble:self didSendData:peripheral characteristic:charact result:true];
+                    [self.bleDelegate ble:self didSendData:peripheral characteristic:charact result:true];
                 });
             }
         }
@@ -1031,7 +1031,7 @@ BOOL ble_isOpenLog = false;
         if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didSendData:characteristic:result:)]) {
             
             dispatch_async(dispatch_get_main_queue(), ^{
-                [_bleDelegate ble:self didSendData:peripheral characteristic:charact result:false];
+                [self.bleDelegate ble:self didSendData:peripheral characteristic:charact result:false];
             });
         }
     }
@@ -1044,7 +1044,7 @@ BOOL ble_isOpenLog = false;
         if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didUpdateRssi:rssi:result:)]) {
             
             dispatch_async(dispatch_get_main_queue(), ^{
-               [_bleDelegate ble:self didUpdateRssi:peripheral rssi:RSSI result:true];
+               [self.bleDelegate ble:self didUpdateRssi:peripheral rssi:RSSI result:true];
             });
         }
     }
@@ -1052,7 +1052,7 @@ BOOL ble_isOpenLog = false;
         if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didUpdateRssi:rssi:result:)]) {
             
             dispatch_async(dispatch_get_main_queue(), ^{
-               [_bleDelegate ble:self didUpdateRssi:peripheral rssi:RSSI result:false];
+               [self.bleDelegate ble:self didUpdateRssi:peripheral rssi:RSSI result:false];
             });
         }
     }
