@@ -364,6 +364,67 @@ BOOL ble_isOpenLog = false;
  *  打开通知
  *
  *  @param peripheral               蓝牙设备
+ *
+ *  @return 成功true，否则false
+ *
+ *  @note 使用commonNotifyCharacteristic服务，走回调函数 ble:didNotify:characteristic:enable:result:
+ */
+- (BOOL)openNofity:(CBPeripheral *)peripheral
+{
+    return [self openNofity:peripheral characteristic:_commonNotifyCharacteristic];
+}
+
+
+/**
+ *  同步打开通知
+ *
+ *  @param peripheral               蓝牙设备
+ *  @param timeOut                  超时时间，单位ms
+ *
+ *  @return 成功true，否则false
+ *
+ *  @note 使用commonNotifyCharacteristic服务，不会走回调函数 ble:didNotify:characteristic:enable:result:
+ */
+- (BOOL)synchronizedOpenNofity:(CBPeripheral *)peripheral time:(NSUInteger)timeOut
+{
+    return [self synchronizedOpenNofity:peripheral characteristic:_commonNotifyCharacteristic time:timeOut];
+}
+
+
+/**
+ *  关闭通知
+ *
+ *  @param peripheral               蓝牙设备
+ *
+ *  @return 成功true，否则false
+ *
+ *  @note 使用commonNotifyCharacteristic服务，走回调函数 ble:didNotify:characteristic:enable:result:
+ */
+- (BOOL)closeNofity:(CBPeripheral *)peripheral
+{
+    return [self closeNofity:peripheral characteristic:_commonNotifyCharacteristic];
+}
+
+
+/**
+ *  同步关闭通知
+ *
+ *  @param peripheral               蓝牙设备
+ *  @param timeOut                  超时时间，单位ms
+ *
+ *  @return 成功true，否则false
+ *
+ *  @note 使用commonNotifyCharacteristic服务，不会走回调函数 ble:didNotify:characteristic:enable:result:
+ */
+- (BOOL)synchronizedCloseNofity:(CBPeripheral *)peripheral time:(NSUInteger)timeOut
+{
+    return [self synchronizedCloseNofity:peripheral characteristic:_commonNotifyCharacteristic time:timeOut];
+}
+
+/**
+ *  打开通知
+ *
+ *  @param peripheral               蓝牙设备
  *  @param characteristic           特征值
  *
  *  @return 成功true，否则false

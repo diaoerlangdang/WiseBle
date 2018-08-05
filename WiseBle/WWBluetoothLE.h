@@ -299,6 +299,54 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
  */
 - (CBCharacteristicProperties)getCharacteristicProperties:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic;
 
+/**
+ *  打开通知
+ *
+ *  @param peripheral               蓝牙设备
+ *
+ *  @return 成功true，否则false
+ *
+ *  @note 使用commonNotifyCharacteristic服务，走回调函数 ble:didNotify:characteristic:enable:result:
+ */
+- (BOOL)openNofity:(CBPeripheral *)peripheral;
+
+
+/**
+ *  同步打开通知
+ *
+ *  @param peripheral               蓝牙设备
+ *  @param timeOut                  超时时间，单位ms
+ *
+ *  @return 成功true，否则false
+ *
+ *  @note 使用commonNotifyCharacteristic服务，不会走回调函数 ble:didNotify:characteristic:enable:result:
+ */
+- (BOOL)synchronizedOpenNofity:(CBPeripheral *)peripheral time:(NSUInteger)timeOut;
+
+/**
+ *  关闭通知
+ *
+ *  @param peripheral               蓝牙设备
+ *
+ *  @return 成功true，否则false
+ *
+ *  @note 使用commonNotifyCharacteristic服务，走回调函数 ble:didNotify:characteristic:enable:result:
+ */
+- (BOOL)closeNofity:(CBPeripheral *)peripheral;
+
+
+/**
+ *  同步关闭通知
+ *
+ *  @param peripheral               蓝牙设备
+ *  @param timeOut                  超时时间，单位ms
+ *
+ *  @return 成功true，否则false
+ *
+ *  @note 使用commonNotifyCharacteristic服务，不会走回调函数 ble:didNotify:characteristic:enable:result:
+ */
+- (BOOL)synchronizedCloseNofity:(CBPeripheral *)peripheral time:(NSUInteger)timeOut;
+
 
 /**
  *  打开通知
@@ -360,7 +408,7 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
  *
  *  @return 成功true，否则false
  *
- *  @note 回调函数 ble:didSendData:characteristic:result:
+ *  @note 使用commonSendCharacteristic服务发送数据，回调函数 ble:didSendData:characteristic:result:
  */
 - (BOOL)send:(CBPeripheral *)peripheral value:(NSData *)data;
 
@@ -374,7 +422,7 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
  *
  *  @return 返回的数据，失败为nil
  *
- *  @note 不走回调函数 ble:didSendData:characteristic:result:
+ *  @note 使用commonSendCharacteristic服务发送数据，不走回调函数 ble:didSendData:characteristic:result:
  */
 - (NSData *)sendReceive:(CBPeripheral *)peripheral value:(NSData *)data time:(NSUInteger)timeOut;
 
