@@ -29,4 +29,13 @@
  */
 - (instancetype)initWithServiceID:(NSString *)serviceID characteristicID:(NSString *)characteristicID;
 
+
+/**
+ 是否相等
+
+ @param characteristic 特征
+ @return 相同true，否则为false
+ */
+- (BOOL)isEqual:(WWCharacteristic *)characteristic;
+
 @end

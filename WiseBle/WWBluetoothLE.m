@@ -28,11 +28,17 @@ BOOL ble_isOpenLog = false;
     //接受数据等待
     WWWaitEvent *_receiveEvent;
     
+    //读取数据等待
+    WWWaitEvent *_readEvent;
+    
     //通知操作等待
     WWWaitEvent *_notifyEvent;
     
     //接收数据
     NSMutableData *_recvData;
+    
+    //读取数据
+    NSMutableData *_readData;
     
     //是否为我主动断开的
     BOOL _isMyDisconnected;
@@ -42,6 +48,9 @@ BOOL ble_isOpenLog = false;
     
     //已经发送的包数
     NSUInteger  _hasSendGroup;
+    
+    //读取的特征
+    WWCharacteristic *_readCharacteristic;
     
 }
 @end
@@ -61,9 +70,13 @@ BOOL ble_isOpenLog = false;
         
         _receiveEvent = [[WWWaitEvent alloc] init];
         
+        _readEvent = [[WWWaitEvent alloc] init];
+        
         _notifyEvent = [[WWWaitEvent alloc] init];
         
         _recvData = [NSMutableData data];
+        
+        _readData = [NSMutableData data];
         
         _isMyDisconnected = false;
     }
@@ -230,9 +243,9 @@ BOOL ble_isOpenLog = false;
 {
     if (peripheral == nil) {
         BLELog(@"设备不能为空");
-        if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
+        if (_connectDelegate != nil && [_connectDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                [self.bleDelegate ble:self didConnect:nil result:false];
+                [self.connectDelegate ble:self didConnect:nil result:false];
             });
         }
         return ;
@@ -369,7 +382,7 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)openNofity:(CBPeripheral *)peripheral
 {
-    return [self openNofity:peripheral characteristic:_commonNotifyCharacteristic];
+    return [self openNofity:peripheral characteristic:_commonResponeNotifyCharacteristic];
 }
 
 
@@ -385,7 +398,7 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)synchronizedOpenNofity:(CBPeripheral *)peripheral time:(NSUInteger)timeOut
 {
-    return [self synchronizedOpenNofity:peripheral characteristic:_commonNotifyCharacteristic time:timeOut];
+    return [self synchronizedOpenNofity:peripheral characteristic:_commonResponeNotifyCharacteristic time:timeOut];
 }
 
 
@@ -400,7 +413,7 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)closeNofity:(CBPeripheral *)peripheral
 {
-    return [self closeNofity:peripheral characteristic:_commonNotifyCharacteristic];
+    return [self closeNofity:peripheral characteristic:_commonResponeNotifyCharacteristic];
 }
 
 
@@ -416,7 +429,7 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)synchronizedCloseNofity:(CBPeripheral *)peripheral time:(NSUInteger)timeOut
 {
-    return [self synchronizedCloseNofity:peripheral characteristic:_commonNotifyCharacteristic time:timeOut];
+    return [self synchronizedCloseNofity:peripheral characteristic:_commonResponeNotifyCharacteristic time:timeOut];
 }
 
 /**
@@ -713,6 +726,95 @@ BOOL ble_isOpenLog = false;
     }
     
     [tempData appendData:_recvData];
+    _recvData = [NSMutableData data];
+    
+    return tempData;
+}
+
+/**
+ 读取数据
+ 
+ @param peripheral 蓝牙设备
+ @param characteristic 读取特征值
+ 
+ @return 成功true，否则false
+ 
+ @note 返回值返到ble:didReceiveData:characteristic:data:
+ */
+- (BOOL)readData:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic
+{
+    if (peripheral == nil) {
+        BLELog(@"下发设备不能为空");
+        return false;
+    }
+    
+    //未连接
+    if (peripheral.state != CBPeripheralStateConnected) {
+        BLELog(@"设备未连接");
+        return false;
+    }
+    
+    
+    if (!characteristic.isHaveValue) {
+        
+        BLELog(@"发送特征值无效");
+        
+        return false;
+    }
+    
+    CBService * service = [self getService:characteristic.serviceID fromPeripheral:peripheral];
+    if (service == nil) {
+        
+        BLELog(@"发送特征值serviceID不存在");
+        
+        return false;
+    }
+    
+    CBCharacteristic  *charact = [self getCharacteristic:characteristic.characteristicID fromService:service];
+    if (charact == nil) {
+        
+        BLELog(@"发送特征值characteristicID不存在");
+        return false;
+    }
+    
+    //是否为可读服务
+    if ( (charact.properties&CBCharacteristicPropertyRead) == 0x00 ) {
+        
+        BLELog(@"发送特征值不支持读取");
+        return false;
+    }
+    
+    _readCharacteristic = characteristic;
+    
+    [peripheral readValueForCharacteristic:charact];
+    
+    return true;
+}
+
+
+/**
+ 同步读取数据
+ 
+ @param peripheral 蓝牙设备
+ @param characteristic 读取特征根治
+ @param timeOut 超时时间
+ @return 读取到的数据
+ */
+- (NSData *)synchronizedReadData:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic time:(NSUInteger)timeOut
+{
+    if (![self readData:peripheral characteristic:characteristic]) {
+        return nil;
+    }
+    
+    
+    NSMutableData *tempData = [NSMutableData data];
+    WWWaitResult result = [_readEvent waitSignle:timeOut];
+    if (result != WWWaitResultSuccess) {
+        return nil;
+    }
+    
+    [tempData appendData:_readData];
+    _readData = [NSMutableData data];
     
     return tempData;
 }
@@ -808,9 +910,9 @@ BOOL ble_isOpenLog = false;
     }
     
     //被动断开
-    if(!_isMyDisconnected && self.bleDelegate && [self.bleDelegate respondsToSelector:@selector(ble:didDisconnect:)]) {
+    if(!_isMyDisconnected && self.connectDelegate && [self.connectDelegate respondsToSelector:@selector(ble:didDisconnect:)]) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self.bleDelegate ble:self didDisconnect:peripheral];
+            [self.connectDelegate ble:self didDisconnect:peripheral];
         });
     }
     
@@ -822,9 +924,9 @@ BOOL ble_isOpenLog = false;
 -(void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error
 {
     //_connectEvent 并未等待 且实现了代理
-    if([_connectEvent getWaitStatus] != WWWaitResultWaiting && self.bleDelegate && [self.bleDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
+    if([_connectEvent getWaitStatus] != WWWaitResultWaiting && self.connectDelegate && [self.connectDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self.bleDelegate ble:self didConnect:peripheral result:NO];
+            [self.connectDelegate ble:self didConnect:peripheral result:NO];
         });
     }
 }
@@ -859,10 +961,10 @@ BOOL ble_isOpenLog = false;
             }
             else {
                 
-                if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
+                if (_connectDelegate != nil && [_connectDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
                     
                     dispatch_async(dispatch_get_main_queue(), ^{
-                       [self.bleDelegate ble:self didConnect:peripheral result:true];
+                       [self.connectDelegate ble:self didConnect:peripheral result:true];
                     });
                 }
             }
@@ -877,10 +979,10 @@ BOOL ble_isOpenLog = false;
         }
         else {
             
-            if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
+            if (_connectDelegate != nil && [_connectDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
                 
                 dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.bleDelegate ble:self didConnect:peripheral result:false];
+                    [self.connectDelegate ble:self didConnect:peripheral result:false];
                 });
                 
             }
@@ -896,7 +998,7 @@ BOOL ble_isOpenLog = false;
     charact.serviceID = characteristic.service.UUID.UUIDString;
     charact.characteristicID = characteristic.UUID.UUIDString;
     
-    if (error != nil) {
+    if (error == nil) {
         
         //同步操作
         if ([_notifyEvent getWaitStatus] == WWWaitResultWaiting) {
@@ -940,65 +1042,19 @@ BOOL ble_isOpenLog = false;
 
 -(void)peripheral:(CBPeripheral *)peripheral didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error
 {
-    NSLog(@"%@有数据", characteristic.UUID.UUIDString);
     
-    if (error != nil) {
+    if (error == nil) {
         
         WWCharacteristic *charact = [[WWCharacteristic alloc] init];
         charact.serviceID = characteristic.service.UUID.UUIDString;
         charact.characteristicID = characteristic.UUID.UUIDString;
         
-        if (_managerData != nil && [_managerData respondsToSelector:@selector(ble:didPreReceive:characteristic:data:)]) {
+        if (_readCharacteristic != nil && [_readCharacteristic isEqual:charact]) {
             
-            //预处理接收数据
-            NSData *tempData = [_managerData ble:self didPreReceive:peripheral characteristic:charact data:characteristic.value];
-            
-            //不为空表示 接收数据完成
-            if (tempData != nil) {
-                
-                [_recvData resetBytesInRange:NSMakeRange(0, _recvData.length)];
-                [_recvData setLength:0];
-                [_recvData appendData:tempData];
-                
-                if ([_receiveEvent getWaitStatus] == WWWaitResultWaiting) {
-                    [_receiveEvent waitOver:WWWaitResultSuccess];
-                }
-                else {
-                    
-                    if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didReceiveData:characteristic:data:)]) {
-                        
-                        //接收数据
-                        NSMutableData *recvData = _recvData;
-                        dispatch_async(dispatch_get_main_queue(), ^{
-                            [self.bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:recvData];
-                        });
-                    }
-                    
-                }
-            }
-            
+            [self readData:peripheral updateValueForCharacteristic:characteristic];
         }
         else {
-            
-            [_recvData resetBytesInRange:NSMakeRange(0, _recvData.length)];
-            [_recvData setLength:0];
-            [_recvData appendData:characteristic.value];
-            if ([_receiveEvent getWaitStatus] == WWWaitResultWaiting) {
-                [_receiveEvent waitOver:WWWaitResultSuccess];
-            }
-            else {
-                
-                if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didReceiveData:characteristic:data:)]) {
-                    
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        [self.bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:characteristic.value];
-                    });
-                    
-                    
-                }
-                
-            }
-            
+            [self receiveData:peripheral updateValueForCharacteristic:characteristic];
         }
         
     }
@@ -1039,7 +1095,7 @@ BOOL ble_isOpenLog = false;
 
 -(void)peripheral:(CBPeripheral *)peripheral didReadRSSI:(NSNumber *)RSSI error:(NSError *)error
 {
-    if (error != nil) {
+    if (error == nil) {
         
         if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didUpdateRssi:rssi:result:)]) {
             
@@ -1057,5 +1113,117 @@ BOOL ble_isOpenLog = false;
         }
     }
 }
+
+
+/**
+ 读取数据返回
+
+ @param peripheral 蓝牙设备
+ @param characteristic 特征
+ */
+- (void)readData:(CBPeripheral *)peripheral updateValueForCharacteristic:(CBCharacteristic *)characteristic
+{
+    WWCharacteristic *charact = [[WWCharacteristic alloc] init];
+    charact.serviceID = characteristic.service.UUID.UUIDString;
+    charact.characteristicID = characteristic.UUID.UUIDString;
+    
+    NSData *valueData = characteristic.value;
+    
+    if ([_readEvent getWaitStatus] == WWWaitResultWaiting) {
+        
+        [_readData resetBytesInRange:NSMakeRange(0, _readData.length)];
+        [_readData setLength:0];
+        [_readData appendData:characteristic.value];
+        [_readEvent waitOver:WWWaitResultSuccess];
+    }
+    else {
+        
+        if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didReceiveData:characteristic:data:)]) {
+            
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self.bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:valueData];
+            });
+            
+            
+        }
+        
+    }
+}
+
+/**
+ 通知接收数据返回
+ 
+ @param peripheral 蓝牙设备
+ @param characteristic 特征
+ */
+- (void)receiveData:(CBPeripheral *)peripheral updateValueForCharacteristic:(CBCharacteristic *)characteristic
+{
+    WWCharacteristic *charact = [[WWCharacteristic alloc] init];
+    charact.serviceID = characteristic.service.UUID.UUIDString;
+    charact.characteristicID = characteristic.UUID.UUIDString;
+    
+    NSData *valueData = characteristic.value;
+    
+    if (_managerData != nil && [_managerData respondsToSelector:@selector(ble:didPreReceive:characteristic:data:)]) {
+        
+        //预处理接收数据
+        NSData *tempData = [_managerData ble:self didPreReceive:peripheral characteristic:charact data:valueData];
+        
+        //不为空表示 接收数据完成
+        if (tempData != nil) {
+            
+            //返回响应
+            if (_commonResponeNotifyCharacteristic != nil && [charact isEqual:_commonResponeNotifyCharacteristic] && [_receiveEvent getWaitStatus] == WWWaitResultWaiting) {
+                
+                [_recvData resetBytesInRange:NSMakeRange(0, _recvData.length)];
+                [_recvData setLength:0];
+                [_recvData appendData:tempData];
+                
+                [_receiveEvent waitOver:WWWaitResultSuccess];
+                
+            }
+            else {
+                
+                if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didReceiveData:characteristic:data:)]) {
+                    
+                    //接收数据
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        [self.bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:tempData];
+                    });
+                }
+            }
+            
+            
+        }
+        
+    }
+    else {
+        
+        //返回响应
+        if (_commonResponeNotifyCharacteristic != nil && [charact isEqual:_commonResponeNotifyCharacteristic] && [_receiveEvent getWaitStatus] == WWWaitResultWaiting) {
+            
+            [_recvData resetBytesInRange:NSMakeRange(0, _recvData.length)];
+            [_recvData setLength:0];
+            [_recvData appendData:valueData];
+            
+            [_receiveEvent waitOver:WWWaitResultSuccess];
+            
+        }
+        else {
+            
+            if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didReceiveData:characteristic:data:)]) {
+                
+                //接收数据
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self.bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:valueData];
+                });
+            }
+        }
+        
+    }
+}
+
+
+
 
 @end

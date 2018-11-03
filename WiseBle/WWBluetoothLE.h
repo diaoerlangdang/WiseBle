@@ -10,6 +10,7 @@
 #import <CoreBluetooth/CoreBluetooth.h>
 #import "NSData+String.h"
 #import "NSString+Hex.h"
+#import "NSMutableData+Append.h"
 #import "WWCharacteristic.h"
 
 typedef NS_ENUM(NSInteger, WWBleLocalState) {
@@ -77,8 +78,8 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
 
 @end
 
-//蓝牙代理
-@protocol WWBluetoothLEDelegate <NSObject>
+//蓝牙连接代理
+@protocol WWBluetoothLEConnectDelegate <NSObject>
 @optional
 
 /**
@@ -99,6 +100,12 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
  *
  */
 - (void)ble:(WWBluetoothLE *)ble didDisconnect:(CBPeripheral *)peripheral;
+
+@end
+
+//蓝牙代理
+@protocol WWBluetoothLEDelegate <NSObject>
+@optional
 
 
 /**
@@ -159,6 +166,9 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
 //蓝牙数据代理
 @property (nonatomic, weak) id<WWBluetoothLEManagerData> managerData;
 
+//蓝牙连接代理
+@property (nonatomic, weak) id<WWBluetoothLEConnectDelegate> connectDelegate;
+
 //蓝牙代理
 @property (nonatomic, weak) id<WWBluetoothLEDelegate> bleDelegate;
 
@@ -168,8 +178,8 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
 //蓝牙本地状态
 @property(readonly) WWBleLocalState loaclState;
 
-//设置一个常用的通知服务，用户数据返回
-@property(atomic, strong) WWCharacteristic *commonNotifyCharacteristic;
+//设置一个常用的响应通知服务，用户数据返回
+@property(atomic, strong) WWCharacteristic *commonResponeNotifyCharacteristic;
 
 //设置一个常用的发送服务，用户数据发送
 @property(atomic, strong) WWCharacteristic *commonSendCharacteristic;
@@ -400,6 +410,7 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
  */
 - (BOOL)synchronizedCloseNofity:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic time:(NSUInteger)timeOut;
 
+
 /**
  *  发送数据
  *
@@ -436,6 +447,7 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
  *  @return 成功true，否则false
  *
  *  @note 回调函数 ble:didSendData:characteristic:result:
+ *        若有返回值，则返回到ble:didReceiveData:characteristic:data:
  */
 - (BOOL)send:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic value:(NSData *)data;
 
@@ -453,6 +465,30 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
  *  @note 不走回调函数 ble:didSendData:characteristic:result:
  */
 - (NSData *)sendReceive:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic value:(NSData *)data time:(NSUInteger)timeOut;
+
+
+/**
+ 读取数据
+
+ @param peripheral 蓝牙设备
+ @param characteristic 读取特征值
+ 
+ @return 成功true，否则false
+ 
+ @note 返回值返到ble:didReceiveData:characteristic:data:
+ */
+- (BOOL)readData:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic;
+
+
+/**
+ 同步读取数据
+
+ @param peripheral 蓝牙设备
+ @param characteristic 读取特征根治
+ @param timeOut 超时时间
+ @return 读取到的数据
+ */
+- (NSData *)synchronizedReadData:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic time:(NSUInteger)timeOut;
 
 
 /**

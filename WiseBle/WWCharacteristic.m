@@ -58,4 +58,21 @@
     _serviceID = [serviceID uppercaseString];
 }
 
+/**
+ 是否相等
+ 
+ @param characteristic 特征
+ @return 相同true，否则为false
+ */
+- (BOOL)isEqual:(WWCharacteristic *)characteristic
+{
+    if ([self.serviceID isEqualToString:characteristic.serviceID] &&
+        [self.characteristicID isEqualToString:characteristic.characteristicID]) {
+        
+        return true;
+    }
+    
+    return false;
+}
+
 @end
