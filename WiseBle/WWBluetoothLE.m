@@ -79,6 +79,8 @@ BOOL ble_isOpenLog = false;
         _readData = [NSMutableData data];
         
         _isMyDisconnected = false;
+        
+        _bAutoGroupSendData = true;
     }
     
     return self;
@@ -199,7 +201,13 @@ BOOL ble_isOpenLog = false;
 -(CBPeripheral *)getPeripheral:(NSString *)identifyUUID
 {
     NSArray *peris = [_centeralManager retrievePeripheralsWithIdentifiers:@[[[NSUUID alloc] initWithUUIDString:identifyUUID]]];
-    return peris[0];
+    if (peris.count > 0) {
+        return peris[0];
+    }
+    else {
+        return nil;
+    }
+    
 }
 
 
@@ -266,9 +274,7 @@ BOOL ble_isOpenLog = false;
  */
 -(void)disconnect:(CBPeripheral *)peripheral
 {
-    _isMyDisconnected = true;
-    
-    [_centeralManager cancelPeripheralConnection:peripheral];
+    [self disconnect:peripheral callBack:true];
 }
 
 /**
@@ -279,9 +285,16 @@ BOOL ble_isOpenLog = false;
  */
 - (void)disconnect:(CBPeripheral *)peripheral callBack:(BOOL)isCallBack
 {
-    _isMyDisconnected = false;
+    if (peripheral == nil) {
+        return;
+    }
+    
+    _isMyDisconnected = !isCallBack;
     
     [_centeralManager cancelPeripheralConnection:peripheral];
+    
+    //结束所有的等待
+    [self cancelAllWaitting];
 }
 
 
@@ -476,7 +489,8 @@ BOOL ble_isOpenLog = false;
         return false;
     }
     
-    if ( (charact.properties & CBCharacteristicPropertyNotify) == 0x00) {
+    if ( ((charact.properties & CBCharacteristicPropertyNotify) == 0x00) &&
+        ((charact.properties & CBCharacteristicPropertyIndicate) == 0x00)) {
         BLELog(@"characteristic 该特征值无通知属性")
         return false;
     }
@@ -677,24 +691,32 @@ BOOL ble_isOpenLog = false;
         sendData = [_managerData ble:self didPreSend:peripheral characteristic:characteristic data:data];
     }
     
-    NSMutableData *temp= [[NSMutableData alloc] initWithCapacity:0];
-    
-    NSUInteger nGroup = (sendData.length+BleDataLengthMax-1)/BleDataLengthMax;
-    _hasSendGroup = 0;
-    _totalSendGroup = nGroup;
-    
-    for (NSUInteger i=0; i<nGroup; i++)
-    {
-        [temp setLength:0];
-        if (i == (nGroup-1)) {
-            [temp appendBytes:(sendData.bytes+i*BleDataLengthMax) length:sendData.length-i*BleDataLengthMax ];
-        }
-        else{
-            [temp appendBytes:(sendData.bytes+i*BleDataLengthMax) length:BleDataLengthMax];
-        }
+    if (_bAutoGroupSendData) {
         
-        [peripheral writeValue:temp forCharacteristic:charact type:type];
+        NSMutableData *temp= [[NSMutableData alloc] initWithCapacity:0];
+        
+        NSUInteger nGroup = (sendData.length+BleDataLengthMax-1)/BleDataLengthMax;
+        _hasSendGroup = 0;
+        _totalSendGroup = nGroup;
+        
+        for (NSUInteger i=0; i<nGroup; i++)
+        {
+            [temp setLength:0];
+            if (i == (nGroup-1)) {
+                [temp appendBytes:(sendData.bytes+i*BleDataLengthMax) length:sendData.length-i*BleDataLengthMax ];
+            }
+            else{
+                [temp appendBytes:(sendData.bytes+i*BleDataLengthMax) length:BleDataLengthMax];
+            }
+            
+            [peripheral writeValue:temp forCharacteristic:charact type:type];
+        }
     }
+    else {
+        [peripheral writeValue:sendData forCharacteristic:charact type:type];
+    }
+    
+    
     
     return true;
 }
@@ -832,6 +854,24 @@ BOOL ble_isOpenLog = false;
     [peripheral readRSSI];
 }
 
+/**
+ 取消所有等待
+ */
+- (void)cancelAllWaitting
+{
+    //连接等待
+    [_connectEvent waitOver:WWWaitResultFailed];
+    
+    //接受数据等待
+    [_receiveEvent waitOver:WWWaitResultFailed];
+    
+    //读取数据等待
+    [_readEvent waitOver:WWWaitResultFailed];
+    
+    //通知操作等待
+    [_notifyEvent waitOver:WWWaitResultFailed];
+}
+
 
 //获取服务
 -(CBService *)getService:(NSString *)serviceID fromPeripheral:(CBPeripheral *)peripheral
@@ -870,9 +910,11 @@ BOOL ble_isOpenLog = false;
             break;
         case CBCentralManagerStatePoweredOn:
             _loaclState = WWBleLocalStatePowerOn;
+            [self cancelAllWaitting];
             break;
         default:
             _loaclState = WWBleLocalStateUnsupported;
+            [self cancelAllWaitting];
             break;
     }
     if([self.managerDelegate respondsToSelector:@selector(ble:didLocalState:)]) {
@@ -880,6 +922,8 @@ BOOL ble_isOpenLog = false;
             [self.managerDelegate ble:self didLocalState:self.loaclState];
         });
     }
+    
+    [[NSNotificationCenter defaultCenter] postNotificationName:kNotificationChangeLocalState object:@(_loaclState)];
 }
 
 //扫描信息代理
@@ -909,6 +953,10 @@ BOOL ble_isOpenLog = false;
         BLELog(@"disconnect error = %@",error);
     }
     
+    if (!_isMyDisconnected) {
+        [[NSNotificationCenter defaultCenter] postNotificationName:kNotificationDisconnected object:nil];
+    }
+    
     //被动断开
     if(!_isMyDisconnected && self.connectDelegate && [self.connectDelegate respondsToSelector:@selector(ble:didDisconnect:)]) {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -918,6 +966,9 @@ BOOL ble_isOpenLog = false;
     
     _isMyDisconnected = false;
     
+    //结束所有的等待
+    
+    [self cancelAllWaitting];
 }
 
 //连接外围设备失败代理
@@ -942,6 +993,9 @@ BOOL ble_isOpenLog = false;
             CBService *service = [peripheral.services objectAtIndex:i];
             [peripheral discoverCharacteristics:nil forService:service];
         }
+    }
+    else {
+        BLELog(@"扫描服务异常%@",error)
     }
     
 }
@@ -1191,6 +1245,7 @@ BOOL ble_isOpenLog = false;
                         [self.bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:tempData];
                     });
                 }
+                
             }
             
             

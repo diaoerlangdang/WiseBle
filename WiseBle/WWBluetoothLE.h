@@ -13,6 +13,12 @@
 #import "NSMutableData+Append.h"
 #import "WWCharacteristic.h"
 
+//蓝牙状态改变通知
+#define kNotificationChangeLocalState   @"ChangeLocalState"
+
+//断开连接
+#define kNotificationDisconnected   @"Disconnected"
+
 typedef NS_ENUM(NSInteger, WWBleLocalState) {
     WWBleLocalStatePowerOff,         //本地蓝牙已关闭
     WWBleLocalStatePowerOn,          //本地蓝牙已开启
@@ -184,6 +190,8 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
 //设置一个常用的发送服务，用户数据发送
 @property(atomic, strong) WWCharacteristic *commonSendCharacteristic;
 
+//发送数据是否自动分包，默认为true
+@property (nonatomic, assign) BOOL bAutoGroupSendData;
 
 /**
  *  蓝牙单例
@@ -499,5 +507,11 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
  *  @note 回调函数 ble:didUpdateRssi:rssi:result:
  */
 - (void)readRssi:(CBPeripheral *)peripheral;
+
+
+/**
+ 取消所有等待
+ */
+- (void)cancelAllWaitting;
 
 @end

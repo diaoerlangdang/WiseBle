@@ -43,6 +43,10 @@
 {
     WWWaitResult result;
     
+    if (_wResult == WWWaitResultWaiting) {
+        dispatch_semaphore_signal(_semaphore);
+    }
+    
     //创建信号量
     _semaphore = dispatch_semaphore_create(0);
     
