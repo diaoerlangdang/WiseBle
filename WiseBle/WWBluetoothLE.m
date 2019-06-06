@@ -192,6 +192,41 @@ BOOL ble_isOpenLog = false;
 }
 
 /**
+ 获取已配对的系统连接的设备
+ 
+ @param serviceUUIDs 设备服务
+ @return 设备列表
+ */
+- (NSArray<CBPeripheral *> *)getSystemConnectDevices:(NSArray<NSString *> *)serviceUUIDs
+{
+    if (_centeralManager.state != CBCentralManagerStatePoweredOn) {
+        return nil;
+    }
+    
+    NSMutableArray<CBUUID *> *uuids = @[].mutableCopy;
+    
+    if (serviceUUIDs != nil) {
+        
+        for (NSString *str in serviceUUIDs) {
+            
+            CBUUID *temp = [CBUUID UUIDWithString:str];
+            
+            if (temp == nil) {
+                BLELog(@"无效uuid");
+                return nil;
+            }
+            else {
+                [uuids addObject:temp];
+            }
+        }
+    }
+    
+    NSArray<CBPeripheral *> *arr = [_centeralManager retrieveConnectedPeripheralsWithServices:uuids];
+    
+    return arr;
+}
+
+/**
  *  根据uuid获取蓝牙实例
  *
  *  @param identifyUUID           蓝牙uuid

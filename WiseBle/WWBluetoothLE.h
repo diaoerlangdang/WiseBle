@@ -243,6 +243,14 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
  */
 - (void)stopScan;
 
+/**
+ 获取已配对的系统连接的设备
+ 
+ @param serviceUUIDs 设备服务
+ @return 设备列表
+ */
+- (NSArray<CBPeripheral *> *)getSystemConnectDevices:(NSArray<NSString *> *)serviceUUIDs;
+
 
 /**
  *  根据uuid获取蓝牙实例

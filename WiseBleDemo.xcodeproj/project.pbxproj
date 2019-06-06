@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E9321B2C226DB52800669819 /* NSMutableData+Append.m in Sources */ = {isa = PBXBuildFile; fileRef = E9321B25226DB52800669819 /* NSMutableData+Append.m */; };
+		E9321B2D226DB52800669819 /* NSData+Reverse.m in Sources */ = {isa = PBXBuildFile; fileRef = E9321B28226DB52800669819 /* NSData+Reverse.m */; };
+		E9321B2E226DB52800669819 /* NSData+String.m in Sources */ = {isa = PBXBuildFile; fileRef = E9321B29226DB52800669819 /* NSData+String.m */; };
+		E9321B2F226DB52800669819 /* NSString+Hex.m in Sources */ = {isa = PBXBuildFile; fileRef = E9321B2B226DB52800669819 /* NSString+Hex.m */; };
 		E93485411EA9D8F80058CDA0 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = E93485401EA9D8F80058CDA0 /* main.m */; };
 		E93485441EA9D8F80058CDA0 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = E93485431EA9D8F80058CDA0 /* AppDelegate.m */; };
 		E93485471EA9D8F80058CDA0 /* ViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = E93485461EA9D8F80058CDA0 /* ViewController.m */; };
@@ -14,14 +18,20 @@
 		E934854C1EA9D8F80058CDA0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E934854B1EA9D8F80058CDA0 /* Assets.xcassets */; };
 		E934854F1EA9D8F80058CDA0 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = E934854D1EA9D8F80058CDA0 /* LaunchScreen.storyboard */; };
 		E93DE4791F4ACBF1001503F4 /* WiseBleData.m in Sources */ = {isa = PBXBuildFile; fileRef = E93DE4781F4ACBF1001503F4 /* WiseBleData.m */; };
-		E94799A91F4EB8470073C643 /* NSData+String.m in Sources */ = {isa = PBXBuildFile; fileRef = E94799A01F4EB8470073C643 /* NSData+String.m */; };
-		E94799AA1F4EB8470073C643 /* NSString+Hex.m in Sources */ = {isa = PBXBuildFile; fileRef = E94799A21F4EB8470073C643 /* NSString+Hex.m */; };
 		E94799AB1F4EB8470073C643 /* WWBluetoothLE.m in Sources */ = {isa = PBXBuildFile; fileRef = E94799A41F4EB8470073C643 /* WWBluetoothLE.m */; };
 		E94799AC1F4EB8470073C643 /* WWCharacteristic.m in Sources */ = {isa = PBXBuildFile; fileRef = E94799A61F4EB8470073C643 /* WWCharacteristic.m */; };
 		E94799AD1F4EB8470073C643 /* WWWaitEvent.m in Sources */ = {isa = PBXBuildFile; fileRef = E94799A81F4EB8470073C643 /* WWWaitEvent.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		E9321B24226DB52800669819 /* NSMutableData+Append.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSMutableData+Append.h"; sourceTree = "<group>"; };
+		E9321B25226DB52800669819 /* NSMutableData+Append.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSMutableData+Append.m"; sourceTree = "<group>"; };
+		E9321B26226DB52800669819 /* NSData+String.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSData+String.h"; sourceTree = "<group>"; };
+		E9321B27226DB52800669819 /* NSString+Hex.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSString+Hex.h"; sourceTree = "<group>"; };
+		E9321B28226DB52800669819 /* NSData+Reverse.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSData+Reverse.m"; sourceTree = "<group>"; };
+		E9321B29226DB52800669819 /* NSData+String.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSData+String.m"; sourceTree = "<group>"; };
+		E9321B2A226DB52800669819 /* NSData+Reverse.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSData+Reverse.h"; sourceTree = "<group>"; };
+		E9321B2B226DB52800669819 /* NSString+Hex.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSString+Hex.m"; sourceTree = "<group>"; };
 		E934853C1EA9D8F80058CDA0 /* WiseBleDemo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WiseBleDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E93485401EA9D8F80058CDA0 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
 		E93485421EA9D8F80058CDA0 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
@@ -34,10 +44,6 @@
 		E93485501EA9D8F80058CDA0 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		E93DE4771F4ACBF1001503F4 /* WiseBleData.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = WiseBleData.h; sourceTree = "<group>"; };
 		E93DE4781F4ACBF1001503F4 /* WiseBleData.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = WiseBleData.m; sourceTree = "<group>"; };
-		E947999F1F4EB8470073C643 /* NSData+String.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSData+String.h"; sourceTree = "<group>"; };
-		E94799A01F4EB8470073C643 /* NSData+String.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSData+String.m"; sourceTree = "<group>"; };
-		E94799A11F4EB8470073C643 /* NSString+Hex.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSString+Hex.h"; sourceTree = "<group>"; };
-		E94799A21F4EB8470073C643 /* NSString+Hex.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSString+Hex.m"; sourceTree = "<group>"; };
 		E94799A31F4EB8470073C643 /* WWBluetoothLE.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = WWBluetoothLE.h; sourceTree = "<group>"; };
 		E94799A41F4EB8470073C643 /* WWBluetoothLE.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = WWBluetoothLE.m; sourceTree = "<group>"; };
 		E94799A51F4EB8470073C643 /* WWCharacteristic.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = WWCharacteristic.h; sourceTree = "<group>"; };
@@ -119,10 +125,14 @@
 		E947999E1F4EB8470073C643 /* category */ = {
 			isa = PBXGroup;
 			children = (
-				E947999F1F4EB8470073C643 /* NSData+String.h */,
-				E94799A01F4EB8470073C643 /* NSData+String.m */,
-				E94799A11F4EB8470073C643 /* NSString+Hex.h */,
-				E94799A21F4EB8470073C643 /* NSString+Hex.m */,
+				E9321B2A226DB52800669819 /* NSData+Reverse.h */,
+				E9321B28226DB52800669819 /* NSData+Reverse.m */,
+				E9321B26226DB52800669819 /* NSData+String.h */,
+				E9321B29226DB52800669819 /* NSData+String.m */,
+				E9321B24226DB52800669819 /* NSMutableData+Append.h */,
+				E9321B25226DB52800669819 /* NSMutableData+Append.m */,
+				E9321B27226DB52800669819 /* NSString+Hex.h */,
+				E9321B2B226DB52800669819 /* NSString+Hex.m */,
 			);
 			path = category;
 			sourceTree = "<group>";
@@ -168,6 +178,7 @@
 			developmentRegion = English;
 			hasScannedForEncodings = 0;
 			knownRegions = (
+				English,
 				en,
 				Base,
 			);
@@ -200,14 +211,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				E93485471EA9D8F80058CDA0 /* ViewController.m in Sources */,
+				E9321B2C226DB52800669819 /* NSMutableData+Append.m in Sources */,
 				E94799AD1F4EB8470073C643 /* WWWaitEvent.m in Sources */,
-				E94799AA1F4EB8470073C643 /* NSString+Hex.m in Sources */,
+				E9321B2E226DB52800669819 /* NSData+String.m in Sources */,
 				E94799AB1F4EB8470073C643 /* WWBluetoothLE.m in Sources */,
+				E9321B2D226DB52800669819 /* NSData+Reverse.m in Sources */,
 				E93485441EA9D8F80058CDA0 /* AppDelegate.m in Sources */,
 				E94799AC1F4EB8470073C643 /* WWCharacteristic.m in Sources */,
 				E93485411EA9D8F80058CDA0 /* main.m in Sources */,
-				E94799A91F4EB8470073C643 /* NSData+String.m in Sources */,
 				E93DE4791F4ACBF1001503F4 /* WiseBleData.m in Sources */,
+				E9321B2F226DB52800669819 /* NSString+Hex.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
