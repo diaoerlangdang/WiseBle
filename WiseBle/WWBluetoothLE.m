@@ -15,8 +15,6 @@ BOOL ble_isOpenLog = false;
 
 #define BLELog(fmt, ...) if(ble_isOpenLog) NSLog((@"WWBLE: " fmt), ##__VA_ARGS__);
 
-#define BleDataLengthMax                20
-
 @interface WWBluetoothLE()<CBCentralManagerDelegate,CBPeripheralDelegate>
 {
     //蓝牙管理类
@@ -81,6 +79,8 @@ BOOL ble_isOpenLog = false;
         _isMyDisconnected = false;
         
         _bAutoGroupSendData = true;
+        
+        _nGroupSendDataLen = 20;
     }
     
     return self;
@@ -727,6 +727,8 @@ BOOL ble_isOpenLog = false;
     }
     
     if (_bAutoGroupSendData) {
+        
+        NSInteger BleDataLengthMax = _nGroupSendDataLen;
         
         NSMutableData *temp= [[NSMutableData alloc] initWithCapacity:0];
         

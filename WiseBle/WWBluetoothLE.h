@@ -193,6 +193,9 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
 //发送数据是否自动分包，默认为true
 @property (nonatomic, assign) BOOL bAutoGroupSendData;
 
+//设置自动分包每包大小, 默认20字节
+@property (nonatomic, assign) NSInteger nGroupSendDataLen;
+
 /**
  *  蓝牙单例
  *
