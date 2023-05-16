@@ -712,7 +712,6 @@ BOOL ble_isOpenLog = false;
         return false;
     }
     
-    NSData *sendData = data;
     //默认无响应
     CBCharacteristicWriteType type = CBCharacteristicWriteWithoutResponse;
     //有响应
@@ -720,6 +719,95 @@ BOOL ble_isOpenLog = false;
         type = CBCharacteristicWriteWithResponse;
     }
     
+    return [self send:peripheral characteristic:characteristic value:data type:type];
+}
+
+/**
+ *  发送接收数据
+ *
+ *  @param peripheral           蓝牙设备
+ *  @param characteristic       发送特征值
+ *  @param data                 发送数据
+ *  @param timeOut              超时时间，单位ms
+ *
+ *  @return 返回的数据，失败为nil
+ *
+ *  @note 不走回调函数 ble:didSendData:characteristic:result:
+ */
+-(NSData *)sendReceive:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic value:(NSData *)data time:(NSUInteger)timeOut
+{
+    if (![self send:peripheral characteristic:characteristic value:data]) {
+        return nil;
+    }
+    
+    
+    NSMutableData *tempData = [NSMutableData data];
+    WWWaitResult result = [_receiveEvent waitSignle:timeOut];
+    if (result != WWWaitResultSuccess) {
+        return nil;
+    }
+    
+    [tempData appendData:_recvData];
+    _recvData = [NSMutableData data];
+    
+    return tempData;
+}
+
+
+/**
+ *  发送数据
+ *
+ *  @param peripheral           蓝牙设备
+ *  @param characteristic       发送特征值
+ *  @param data                 发送数据
+ *  @param type                  发送类型
+ *
+ *  @return 成功true，否则false
+ *
+ *  @note 回调函数 ble:didSendData:characteristic:result:
+ *        若有返回值，则返回到ble:didReceiveData:characteristic:data:
+ */
+- (BOOL)send:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic value:(NSData *)data type:(CBCharacteristicWriteType)type
+{
+    if (peripheral == nil) {
+        BLELog(@"下发设备不能为空");
+        return false;
+    }
+    
+    //未连接
+    if (peripheral.state != CBPeripheralStateConnected) {
+        BLELog(@"设备未连接");
+        return false;
+    }
+    
+    if (data == nil) {
+        BLELog(@"下发数据不能为空");
+        return  false;
+    }
+    
+    if (!characteristic.isHaveValue) {
+        
+        BLELog(@"发送特征值无效");
+        
+        return false;
+    }
+    
+    CBService * service = [self getService:characteristic.serviceID fromPeripheral:peripheral];
+    if (service == nil) {
+        
+        BLELog(@"发送特征值serviceID不存在");
+        
+        return false;
+    }
+    
+    CBCharacteristic  *charact = [self getCharacteristic:characteristic.characteristicID fromService:service];
+    if (charact == nil) {
+        
+        BLELog(@"发送特征值characteristicID不存在");
+        return false;
+    }
+    
+    NSData *sendData = data;
     //若代理存在，则调用代理
     if (_managerData != nil && [_managerData respondsToSelector:@selector(ble:didPreSend:characteristic:data:)]) {
         
@@ -753,11 +841,8 @@ BOOL ble_isOpenLog = false;
         [peripheral writeValue:sendData forCharacteristic:charact type:type];
     }
     
-    
-    
     return true;
 }
-
 
 /**
  *  发送接收数据
@@ -765,15 +850,16 @@ BOOL ble_isOpenLog = false;
  *  @param peripheral           蓝牙设备
  *  @param characteristic       发送特征值
  *  @param data                 发送数据
+ *  @param type                  发送类型
  *  @param timeOut              超时时间，单位ms
  *
  *  @return 返回的数据，失败为nil
  *
  *  @note 不走回调函数 ble:didSendData:characteristic:result:
  */
--(NSData *)sendReceive:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic value:(NSData *)data time:(NSUInteger)timeOut
+- (NSData *)sendReceive:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic value:(NSData *)data type:(CBCharacteristicWriteType)type time:(NSUInteger)timeOut
 {
-    if (![self send:peripheral characteristic:characteristic value:data]) {
+    if (![self send:peripheral characteristic:characteristic value:data type:type]) {
         return nil;
     }
     
@@ -789,6 +875,7 @@ BOOL ble_isOpenLog = false;
     
     return tempData;
 }
+
 
 /**
  读取数据

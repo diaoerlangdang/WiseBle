@@ -487,6 +487,38 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
 
 
 /**
+ *  发送数据
+ *
+ *  @param peripheral           蓝牙设备
+ *  @param characteristic       发送特征值
+ *  @param data                 发送数据
+ *  @param type                  发送类型
+ *
+ *  @return 成功true，否则false
+ *
+ *  @note 回调函数 ble:didSendData:characteristic:result:
+ *        若有返回值，则返回到ble:didReceiveData:characteristic:data:
+ */
+- (BOOL)send:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic value:(NSData *)data type:(CBCharacteristicWriteType)type;
+
+
+/**
+ *  发送接收数据
+ *
+ *  @param peripheral           蓝牙设备
+ *  @param characteristic       发送特征值
+ *  @param data                 发送数据
+ *  @param type                  发送类型
+ *  @param timeOut              超时时间，单位ms
+ *
+ *  @return 返回的数据，失败为nil
+ *
+ *  @note 不走回调函数 ble:didSendData:characteristic:result:
+ */
+- (NSData *)sendReceive:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic value:(NSData *)data type:(CBCharacteristicWriteType)type time:(NSUInteger)timeOut;
+
+
+/**
  读取数据
 
  @param peripheral 蓝牙设备
