@@ -20,6 +20,10 @@
 	<string>1</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>用于扫描、连接并与附近的蓝牙设备通信。</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>用于扫描、连接并与附近的蓝牙设备通信。</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

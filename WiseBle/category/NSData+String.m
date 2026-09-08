@@ -24,7 +24,13 @@
     Byte byte;
     for (NSUInteger i=0; i<len; i++)
     {
-        byte = ([self toByte:[string characterAtIndex:2*i]]<<4) + [self toByte:[string characterAtIndex:2*i+1]];
+        Byte high;
+        Byte low;
+        if (![self toByte:[string characterAtIndex:2*i] value:&high] ||
+            ![self toByte:[string characterAtIndex:2*i+1] value:&low]) {
+            return nil;
+        }
+        byte = (high << 4) + low;
         [data appendBytes:&byte length:1];
     }
     
@@ -40,24 +46,26 @@
 
 
 //将字符转换为对应的asci值
-+(Byte)toByte:(unichar)ch;
++(BOOL)toByte:(unichar)ch value:(Byte *)value
 {
     if (ch>='a' && ch<='f')
     {
-        return ch-'a'+10;
+        *value = ch-'a'+10;
     }
     else if (ch>='A' && ch<='F')
     {
-        return ch-'A'+10;
+        *value = ch-'A'+10;
     }
     else if (ch>='0' && ch<='9')
     {
-        return ch-'0';
+        *value = ch-'0';
     }
     else
     {
-        return 0;
+        return NO;
     }
+
+    return YES;
 }
 
 

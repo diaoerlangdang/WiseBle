@@ -11,10 +11,10 @@
 @interface WWCharacteristic : NSObject
 
 //特征所在服务的uuid
-@property (nonatomic, strong) NSString *serviceID;
+@property (nonatomic, copy) NSString *serviceID;
 
 //特征的uuid
-@property (nonatomic, strong) NSString *characteristicID;
+@property (nonatomic, copy) NSString *characteristicID;
 
 //serviceID characteristicID是否有值
 @property (nonatomic, assign, readonly) BOOL isHaveValue;
@@ -33,9 +33,9 @@
 /**
  是否相等
 
- @param characteristic 特征
+ @param object 待比较对象
  @return 相同true，否则为false
  */
-- (BOOL)isEqual:(WWCharacteristic *)characteristic;
+- (BOOL)isEqual:(id)object;
 
 @end

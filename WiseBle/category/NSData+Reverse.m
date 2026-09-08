@@ -17,17 +17,14 @@
  */
 - (NSData *)reverseData
 {
-    Byte *b = malloc(self.length);
-    Byte *p = (Byte *)(self.bytes);
-    for (int i=0; i<self.length; i++) {
-        b[i] = p[self.length-1-i];
+    NSMutableData *reversedData = [NSMutableData dataWithLength:self.length];
+    Byte *destination = reversedData.mutableBytes;
+    const Byte *source = self.bytes;
+    for (NSUInteger i=0; i<self.length; i++) {
+        destination[i] = source[self.length-1-i];
     }
-    
-    NSData *temp = [NSData dataWithBytes:b length:self.length];
-    free(b);
-    b = NULL;
-    
-    return temp;
+
+    return reversedData;
 }
 
 @end

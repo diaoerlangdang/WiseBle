@@ -22,8 +22,8 @@
 {
     self = [super init];
     if (self) {
-        _serviceID = serviceID;
-        _characteristicID = characteristicID;
+        self.serviceID = serviceID;
+        self.characteristicID = characteristicID;
     }
     
     return self;
@@ -33,15 +33,15 @@
 - (BOOL)isHaveValue
 {
     NSCharacterSet *set = [NSCharacterSet whitespaceAndNewlineCharacterSet];
-    NSString *trimedString = [_serviceID stringByTrimmingCharactersInSet:set];
+    NSString *trimedString = [self.serviceID stringByTrimmingCharactersInSet:set];
     
-    if (trimedString.length == 0 || _serviceID.length == 0 || !_serviceID) {
+    if (trimedString.length == 0) {
         return false;
     }
     
-    trimedString = [_serviceID stringByTrimmingCharactersInSet:set];
+    trimedString = [self.characteristicID stringByTrimmingCharactersInSet:set];
     
-    if (trimedString.length == 0 || _serviceID.length == 0 || !_serviceID) {
+    if (trimedString.length == 0) {
         return false;
     }
     
@@ -61,11 +61,19 @@
 /**
  是否相等
  
- @param characteristic 特征
+ @param object 待比较对象
  @return 相同true，否则为false
  */
-- (BOOL)isEqual:(WWCharacteristic *)characteristic
+- (BOOL)isEqual:(id)object
 {
+    if (self == object) {
+        return true;
+    }
+    if (![object isKindOfClass:[WWCharacteristic class]]) {
+        return false;
+    }
+
+    WWCharacteristic *characteristic = object;
     if ([self.serviceID isEqualToString:characteristic.serviceID] &&
         [self.characteristicID isEqualToString:characteristic.characteristicID]) {
         
@@ -73,6 +81,11 @@
     }
     
     return false;
+}
+
+- (NSUInteger)hash
+{
+    return self.serviceID.hash ^ self.characteristicID.hash;
 }
 
 @end

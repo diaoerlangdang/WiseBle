@@ -12,6 +12,8 @@
 {
     WWWaitResult _wResult;          //等待结果
     dispatch_semaphore_t _semaphore;
+    BOOL _needsConsumption;
+    BOOL _hasPrepared;
 }
 
 @end
@@ -25,10 +27,63 @@
         
         //创建信号量
         _semaphore = dispatch_semaphore_create(0);
+        _wResult = WWWaitResultSuccess;
         
     }
     
     return self;
+}
+
+- (BOOL)prepareWait
+{
+    @synchronized(self) {
+        if (_hasPrepared) {
+            return NO;
+        }
+
+        _semaphore = dispatch_semaphore_create(0);
+        _wResult = WWWaitResultWaiting;
+        _needsConsumption = YES;
+        _hasPrepared = YES;
+        return YES;
+    }
+}
+
+- (WWWaitResult)waitPrepared:(NSUInteger)mills
+{
+    dispatch_semaphore_t semaphore;
+    @synchronized(self) {
+        if (!_needsConsumption) {
+            return _wResult;
+        }
+        if (_wResult != WWWaitResultWaiting) {
+            WWWaitResult result = _wResult;
+            _needsConsumption = NO;
+            return result;
+        }
+        semaphore = _semaphore;
+    }
+
+    uint64_t timeout = mills > ((uint64_t)INT64_MAX / NSEC_PER_MSEC)
+        ? (uint64_t)INT64_MAX
+        : (uint64_t)mills * NSEC_PER_MSEC;
+    dispatch_time_t time = dispatch_time(DISPATCH_TIME_NOW, (int64_t)timeout);
+    if (dispatch_semaphore_wait(semaphore, time) != 0) {
+        @synchronized(self) {
+            if (_semaphore == semaphore && _wResult == WWWaitResultWaiting) {
+                _wResult = WWWaitResultTimeOut;
+            }
+        }
+    }
+
+    WWWaitResult result;
+    @synchronized(self) {
+        result = _wResult;
+        if (_semaphore == semaphore) {
+            _needsConsumption = NO;
+        }
+    }
+    return result;
 }
 
 
@@ -41,33 +96,10 @@
  */
 -(WWWaitResult)waitSignle:(NSUInteger) mills
 {
-    WWWaitResult result;
-    
-    if (_wResult == WWWaitResultWaiting) {
-        dispatch_semaphore_signal(_semaphore);
+    if (![self prepareWait]) {
+        return WWWaitResultFailed;
     }
-    
-    //创建信号量
-    _semaphore = dispatch_semaphore_create(0);
-    
-    //线程同步
-    @synchronized(self)
-    {
-        _wResult = WWWaitResultWaiting;
-    }
-    
-    dispatch_time_t time = dispatch_time ( DISPATCH_TIME_NOW , mills * NSEC_PER_MSEC ) ;
-    //信号等待,不为0表示超时
-    if ( dispatch_semaphore_wait(_semaphore, time) != 0 ){
-        [self waitTimeOut];
-    }
-    
-    @synchronized(self)
-    {
-        result = _wResult;
-    }
-    
-    return result;
+    return [self waitPrepared:mills];
 }
 
 
@@ -79,13 +111,16 @@
  */
 -(void)waitOver:(WWWaitResult)result
 {
-    //线程同步
-    @synchronized(self)
-    {
+    dispatch_semaphore_t semaphore = nil;
+    @synchronized(self) {
+        if (_wResult != WWWaitResultWaiting) {
+            return;
+        }
         _wResult = result;
+        semaphore = _semaphore;
     }
-    
-    dispatch_semaphore_signal(_semaphore);
+
+    dispatch_semaphore_signal(semaphore);
 }
 
 /**
@@ -104,12 +139,4 @@
     
     return result;
 }
-
-
-//超时
--(void)waitTimeOut
-{
-    [self waitOver:WWWaitResultTimeOut];
-}
-
 @end

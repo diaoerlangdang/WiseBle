@@ -38,6 +38,9 @@
 //utf-8转字符串的编码
 +(NSString*)utf8ToUnicode:(unsigned char *)data length:(unsigned int)len
 {
+    if (data == NULL && len > 0) {
+        return nil;
+    }
     NSData *temp = [NSData dataWithBytes:data length:len];
     NSString *result = [[NSString alloc] initWithData:temp  encoding:NSUTF8StringEncoding];
     return result;

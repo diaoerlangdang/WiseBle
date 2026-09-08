@@ -18,6 +18,23 @@ typedef enum : NSUInteger {
 @interface WWWaitEvent : NSObject
 
 /**
+ *  注册一次等待。必须在发起异步操作前调用，每个实例只能注册一次。
+ *  后续操作应创建新的 WWWaitEvent，避免旧完成信号污染新等待。
+ *
+ *  @return 成功true；该实例已注册过等待时返回false
+ */
+- (BOOL)prepareWait;
+
+/**
+ *  等待已注册操作完成。
+ *
+ *  @param mills 超时时间，单位ms
+ *
+ *  @return 等待结果
+ */
+- (WWWaitResult)waitPrepared:(NSUInteger)mills;
+
+/**
  *  等待结果,直到调用waitOver，或mills（ms）后超时
  *
  *  @param mills     超时时间

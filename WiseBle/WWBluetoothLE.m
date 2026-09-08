@@ -9,6 +9,37 @@
 #import "WWBluetoothLE.h"
 #import "WWWaitEvent.h"
 
+static void *WWBLEQueueSpecificKey = &WWBLEQueueSpecificKey;
+
+@interface WWBLEOperationContext : NSObject
+@property (nonatomic, strong) CBPeripheral *peripheral;
+@property (nonatomic, strong) WWCharacteristic *characteristic;
+@property (nonatomic, strong) WWWaitEvent *event;
+@property (nonatomic, assign) BOOL synchronous;
+@property (nonatomic, assign) BOOL enable;
+@property (nonatomic, assign) BOOL abandoned;
+@property (nonatomic, strong) NSData *data;
+@property (nonatomic, strong) NSMutableSet<NSValue *> *pendingServices;
+@end
+
+@implementation WWBLEOperationContext
+@end
+
+@interface WWBLEWriteContext : NSObject
+@property (nonatomic, strong) CBPeripheral *peripheral;
+@property (nonatomic, strong) CBCharacteristic *nativeCharacteristic;
+@property (nonatomic, strong) WWCharacteristic *characteristic;
+@property (nonatomic, copy) NSArray<NSData *> *packets;
+@property (nonatomic, assign) NSUInteger nextPacketIndex;
+@property (nonatomic, assign) CBCharacteristicWriteType type;
+@property (nonatomic, assign) BOOL notifyDelegate;
+@property (nonatomic, strong) WWBLEOperationContext *responseContext;
+@property (nonatomic, assign) BOOL abandoned;
+@end
+
+@implementation WWBLEWriteContext
+@end
+
 
 //是否打印日志
 BOOL ble_isOpenLog = false;
@@ -19,37 +50,26 @@ BOOL ble_isOpenLog = false;
 {
     //蓝牙管理类
     CBCentralManager *_centeralManager;
+
+    //CoreBluetooth代理回调队列
+    dispatch_queue_t _bleQueue;
+
+    BOOL _isScanning;
+    WWBleLocalState _loaclState;
     
-    //连接等待
-    WWWaitEvent *_connectEvent;
-    
-    //接受数据等待
-    WWWaitEvent *_receiveEvent;
-    
-    //读取数据等待
-    WWWaitEvent *_readEvent;
-    
-    //通知操作等待
-    WWWaitEvent *_notifyEvent;
-    
-    //接收数据
-    NSMutableData *_recvData;
-    
-    //读取数据
-    NSMutableData *_readData;
-    
-    //是否为我主动断开的
-    BOOL _isMyDisconnected;
-    
-    //总共要发送的包数
-    NSUInteger  _totalSendGroup;
-    
-    //已经发送的包数
-    NSUInteger  _hasSendGroup;
-    
-    //读取的特征
-    WWCharacteristic *_readCharacteristic;
-    
+    //每台设备的连接流程
+    NSMutableDictionary<NSString *, WWBLEOperationContext *> *_connectionContexts;
+
+    NSMutableDictionary<NSString *, WWBLEOperationContext *> *_receiveContexts;
+
+    NSMutableDictionary<NSString *, WWBLEOperationContext *> *_readContexts;
+
+    NSMutableDictionary<NSString *, WWBLEOperationContext *> *_notifyContexts;
+
+    NSMutableDictionary<NSString *, WWBLEWriteContext *> *_writeContexts;
+
+    NSMutableSet<NSString *> *_silentDisconnects;
+    NSMutableSet<NSString *> *_pendingDisconnects;
 }
 @end
 
@@ -58,25 +78,28 @@ BOOL ble_isOpenLog = false;
 
 -(instancetype)init
 {
+    dispatch_queue_t queue = dispatch_queue_create("com.wise.WiseBle", DISPATCH_QUEUE_SERIAL);
+    CBCentralManager *centralManager = [[CBCentralManager alloc] initWithDelegate:nil queue:queue];
+    return [self initWithCentralManager:centralManager queue:queue];
+}
+
+- (instancetype)initWithCentralManager:(CBCentralManager *)centralManager queue:(dispatch_queue_t)queue
+{
     self = [super init];
     if (self != nil) {
-        
+        _bleQueue = queue;
+        dispatch_queue_set_specific(_bleQueue, WWBLEQueueSpecificKey, (__bridge void *)self, NULL);
         _managerDelegate = nil;
-        _centeralManager = [[CBCentralManager alloc] initWithDelegate:self queue:nil];
+        _centeralManager = centralManager;
+        _centeralManager.delegate = self;
         
-        _connectEvent = [[WWWaitEvent alloc] init];
-        
-        _receiveEvent = [[WWWaitEvent alloc] init];
-        
-        _readEvent = [[WWWaitEvent alloc] init];
-        
-        _notifyEvent = [[WWWaitEvent alloc] init];
-        
-        _recvData = [NSMutableData data];
-        
-        _readData = [NSMutableData data];
-        
-        _isMyDisconnected = false;
+        _connectionContexts = [NSMutableDictionary dictionary];
+        _receiveContexts = [NSMutableDictionary dictionary];
+        _readContexts = [NSMutableDictionary dictionary];
+        _notifyContexts = [NSMutableDictionary dictionary];
+        _writeContexts = [NSMutableDictionary dictionary];
+        _silentDisconnects = [NSMutableSet set];
+        _pendingDisconnects = [NSMutableSet set];
         
         _bAutoGroupSendData = true;
         
@@ -84,6 +107,538 @@ BOOL ble_isOpenLog = false;
     }
     
     return self;
+}
+
+- (BOOL)isOnBLEQueue
+{
+    return dispatch_get_specific(WWBLEQueueSpecificKey) == (__bridge void *)self;
+}
+
+- (void)performOnBLEQueueSync:(dispatch_block_t)block
+{
+    if ([self isOnBLEQueue]) {
+        block();
+    }
+    else {
+        dispatch_sync(_bleQueue, block);
+    }
+}
+
+- (void)performOnBLEQueueAsync:(dispatch_block_t)block
+{
+    if ([self isOnBLEQueue]) {
+        block();
+    }
+    else {
+        dispatch_async(_bleQueue, block);
+    }
+}
+
+- (NSString *)peripheralKey:(CBPeripheral *)peripheral
+{
+    return peripheral.identifier.UUIDString ?: [NSString stringWithFormat:@"%p", peripheral];
+}
+
+- (NSString *)operationKeyForPeripheral:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic
+{
+    return [NSString stringWithFormat:@"%@|%@|%@",
+            [self peripheralKey:peripheral],
+            characteristic.serviceID,
+            characteristic.characteristicID];
+}
+
+- (WWCharacteristic *)snapshotOfCharacteristic:(WWCharacteristic *)characteristic
+{
+    return [[WWCharacteristic alloc] initWithServiceID:characteristic.serviceID
+                                      characteristicID:characteristic.characteristicID];
+}
+
+- (BOOL)startNotificationForPeripheral:(CBPeripheral *)peripheral
+                         characteristic:(WWCharacteristic *)characteristic
+                                 enable:(BOOL)enable
+                            synchronous:(BOOL)synchronous
+                                context:(WWBLEOperationContext **)contextOut
+{
+    if (peripheral == nil || characteristic == nil || !characteristic.isHaveValue) {
+        return NO;
+    }
+    WWCharacteristic *characteristicSnapshot = [self snapshotOfCharacteristic:characteristic];
+
+    __block BOOL started = NO;
+    __block WWBLEOperationContext *context = nil;
+    [self performOnBLEQueueSync:^{
+        if (peripheral.state != CBPeripheralStateConnected ||
+            [self->_pendingDisconnects containsObject:[self peripheralKey:peripheral]]) {
+            return;
+        }
+
+        CBService *service = [self getService:characteristicSnapshot.serviceID fromPeripheral:peripheral];
+        CBCharacteristic *nativeCharacteristic = [self getCharacteristic:characteristicSnapshot.characteristicID fromService:service];
+        CBCharacteristicProperties properties = nativeCharacteristic.properties;
+        if (nativeCharacteristic == nil ||
+            ((properties & CBCharacteristicPropertyNotify) == 0 &&
+             (properties & CBCharacteristicPropertyIndicate) == 0)) {
+            return;
+        }
+
+        NSString *key = [self operationKeyForPeripheral:peripheral characteristic:characteristicSnapshot];
+        if (self->_notifyContexts[key] != nil) {
+            return;
+        }
+
+        context = [[WWBLEOperationContext alloc] init];
+        context.peripheral = peripheral;
+        context.characteristic = characteristicSnapshot;
+        context.enable = enable;
+        context.synchronous = synchronous;
+        if (synchronous) {
+            context.event = [[WWWaitEvent alloc] init];
+            [context.event prepareWait];
+        }
+        self->_notifyContexts[key] = context;
+        [peripheral setNotifyValue:enable forCharacteristic:nativeCharacteristic];
+        started = YES;
+    }];
+
+    if (contextOut != NULL) {
+        *contextOut = context;
+    }
+    return started;
+}
+
+- (BOOL)waitForNotificationContext:(WWBLEOperationContext *)context timeout:(NSUInteger)timeOut
+{
+    WWWaitResult result = [context.event waitPrepared:timeOut];
+    if (result == WWWaitResultWaiting) {
+        return NO;
+    }
+    if (result == WWWaitResultTimeOut) {
+        [self performOnBLEQueueSync:^{
+            NSString *key = [self operationKeyForPeripheral:context.peripheral characteristic:context.characteristic];
+            if (self->_notifyContexts[key] == context) {
+                context.abandoned = YES;
+            }
+        }];
+    }
+    return result == WWWaitResultSuccess;
+}
+
+- (void)finishWriteContext:(WWBLEWriteContext *)context success:(BOOL)success
+{
+    NSString *key = [self peripheralKey:context.peripheral];
+    if (_writeContexts[key] != context) {
+        return;
+    }
+    [_writeContexts removeObjectForKey:key];
+
+    if (!success && context.responseContext != nil) {
+        context.responseContext.abandoned = YES;
+        [context.responseContext.event waitOver:WWWaitResultFailed];
+    }
+    id<WWBluetoothLEDelegate> delegate = self.bleDelegate;
+    if (context.notifyDelegate &&
+        [delegate respondsToSelector:@selector(ble:didSendData:characteristic:result:)]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [delegate ble:self
+              didSendData:context.peripheral
+           characteristic:context.characteristic
+                   result:success];
+        });
+    }
+}
+
+- (void)pumpWriteContext:(WWBLEWriteContext *)context
+{
+    if (_writeContexts[[self peripheralKey:context.peripheral]] != context) {
+        return;
+    }
+
+    if (context.type == CBCharacteristicWriteWithResponse) {
+        if (context.nextPacketIndex >= context.packets.count) {
+            [self finishWriteContext:context success:YES];
+            return;
+        }
+
+        NSData *packet = context.packets[context.nextPacketIndex++];
+        [context.peripheral writeValue:packet
+                     forCharacteristic:context.nativeCharacteristic
+                                  type:context.type];
+        return;
+    }
+
+    while (context.nextPacketIndex < context.packets.count &&
+           context.peripheral.canSendWriteWithoutResponse) {
+        NSData *packet = context.packets[context.nextPacketIndex++];
+        [context.peripheral writeValue:packet
+                     forCharacteristic:context.nativeCharacteristic
+                                  type:context.type];
+    }
+    if (context.nextPacketIndex == context.packets.count) {
+        [self finishWriteContext:context success:YES];
+    }
+}
+
+- (BOOL)startSend:(CBPeripheral *)peripheral
+    characteristic:(WWCharacteristic *)characteristic
+             value:(NSData *)data
+              type:(NSNumber *)requestedType
+    notifyDelegate:(BOOL)notifyDelegate
+   responseContext:(WWBLEOperationContext *)responseContext
+{
+    if (peripheral == nil || characteristic == nil || !characteristic.isHaveValue || data.length == 0) {
+        return NO;
+    }
+    WWCharacteristic *characteristicSnapshot = [self snapshotOfCharacteristic:characteristic];
+
+    NSData *sendData = data;
+    id<WWBluetoothLEManagerData> managerData = self.managerData;
+    if ([managerData respondsToSelector:@selector(ble:didPreSend:characteristic:data:)]) {
+        sendData = [managerData ble:self
+                         didPreSend:peripheral
+                     characteristic:characteristicSnapshot
+                               data:data];
+    }
+    if (sendData.length == 0) {
+        return NO;
+    }
+
+    __block BOOL started = NO;
+    [self performOnBLEQueueSync:^{
+        NSString *key = [self peripheralKey:peripheral];
+        WWBLEOperationContext *receiveContext = self->_receiveContexts[key];
+        if (peripheral.state != CBPeripheralStateConnected ||
+            [self->_pendingDisconnects containsObject:key] ||
+            self->_writeContexts[key] != nil ||
+            (receiveContext != nil && receiveContext != responseContext)) {
+            return;
+        }
+
+        CBService *service = [self getService:characteristicSnapshot.serviceID fromPeripheral:peripheral];
+        CBCharacteristic *nativeCharacteristic = [self getCharacteristic:characteristicSnapshot.characteristicID fromService:service];
+        if (nativeCharacteristic == nil) {
+            return;
+        }
+
+        CBCharacteristicWriteType type;
+        if (requestedType != nil) {
+            type = requestedType.integerValue;
+            if (type != CBCharacteristicWriteWithResponse &&
+                type != CBCharacteristicWriteWithoutResponse) {
+                return;
+            }
+        }
+        else if ((nativeCharacteristic.properties & CBCharacteristicPropertyWrite) != 0) {
+            type = CBCharacteristicWriteWithResponse;
+        }
+        else if ((nativeCharacteristic.properties & CBCharacteristicPropertyWriteWithoutResponse) != 0) {
+            type = CBCharacteristicWriteWithoutResponse;
+        }
+        else {
+            return;
+        }
+
+        CBCharacteristicProperties requiredProperty = type == CBCharacteristicWriteWithResponse
+            ? CBCharacteristicPropertyWrite
+            : CBCharacteristicPropertyWriteWithoutResponse;
+        if ((nativeCharacteristic.properties & requiredProperty) == 0) {
+            return;
+        }
+
+        NSUInteger maximumLength = [peripheral maximumWriteValueLengthForType:type];
+        if (maximumLength == 0) {
+            return;
+        }
+
+        NSUInteger packetLength;
+        if (self->_bAutoGroupSendData) {
+            if (self->_nGroupSendDataLen <= 0) {
+                return;
+            }
+            packetLength = MIN((NSUInteger)self->_nGroupSendDataLen, maximumLength);
+        }
+        else {
+            if (sendData.length > maximumLength) {
+                return;
+            }
+            packetLength = sendData.length;
+        }
+
+        NSMutableArray<NSData *> *packets = [NSMutableArray array];
+        for (NSUInteger offset = 0; offset < sendData.length; offset += packetLength) {
+            NSUInteger length = MIN(packetLength, sendData.length - offset);
+            [packets addObject:[sendData subdataWithRange:NSMakeRange(offset, length)]];
+        }
+
+        WWBLEWriteContext *context = [[WWBLEWriteContext alloc] init];
+        context.peripheral = peripheral;
+        context.nativeCharacteristic = nativeCharacteristic;
+        context.characteristic = characteristicSnapshot;
+        context.packets = packets;
+        context.type = type;
+        context.notifyDelegate = notifyDelegate;
+        context.responseContext = responseContext;
+        self->_writeContexts[key] = context;
+        started = YES;
+        [self pumpWriteContext:context];
+    }];
+    return started;
+}
+
+- (NSData *)sendReceiveInternal:(CBPeripheral *)peripheral
+                  characteristic:(WWCharacteristic *)characteristic
+                           value:(NSData *)data
+                            type:(NSNumber *)requestedType
+                         timeout:(NSUInteger)timeOut
+{
+    WWCharacteristic *responseCharacteristic = self.commonResponeNotifyCharacteristic;
+    if ([NSThread isMainThread] || [self isOnBLEQueue] ||
+        peripheral == nil || !responseCharacteristic.isHaveValue) {
+        return nil;
+    }
+
+    WWBLEOperationContext *context = [[WWBLEOperationContext alloc] init];
+    context.peripheral = peripheral;
+    context.characteristic = [self snapshotOfCharacteristic:responseCharacteristic];
+    context.synchronous = YES;
+    context.event = [[WWWaitEvent alloc] init];
+    [context.event prepareWait];
+
+    __block BOOL started = NO;
+    [self performOnBLEQueueSync:^{
+        NSString *key = [self peripheralKey:peripheral];
+        NSString *readKey = [self operationKeyForPeripheral:peripheral characteristic:context.characteristic];
+        if (self->_receiveContexts[key] != nil || self->_readContexts[readKey] != nil) {
+            return;
+        }
+        self->_receiveContexts[key] = context;
+        started = [self startSend:peripheral
+                   characteristic:characteristic
+                            value:data
+                             type:requestedType
+                   notifyDelegate:NO
+                  responseContext:context];
+        if (!started) {
+            [self->_receiveContexts removeObjectForKey:key];
+        }
+    }];
+    if (!started) {
+        return nil;
+    }
+
+    WWWaitResult result = [context.event waitPrepared:timeOut];
+    [self performOnBLEQueueSync:^{
+        NSString *key = [self peripheralKey:peripheral];
+        if (self->_receiveContexts[key] == context) {
+            if (result == WWWaitResultTimeOut || context.abandoned) {
+                context.abandoned = YES;
+                WWBLEWriteContext *writeContext = self->_writeContexts[key];
+                if (writeContext.responseContext == context) {
+                    writeContext.abandoned = YES;
+                    if (writeContext.type == CBCharacteristicWriteWithoutResponse) {
+                        [self finishWriteContext:writeContext success:NO];
+                    }
+                }
+            }
+            else {
+                [self->_receiveContexts removeObjectForKey:key];
+            }
+        }
+    }];
+    return result == WWWaitResultSuccess ? context.data : nil;
+}
+
+- (void)finishConnectionContext:(WWBLEOperationContext *)context success:(BOOL)success
+{
+    NSString *key = [self peripheralKey:context.peripheral];
+    if (_connectionContexts[key] != context) {
+        return;
+    }
+    [_connectionContexts removeObjectForKey:key];
+
+    if (context.synchronous) {
+        [context.event waitOver:success ? WWWaitResultSuccess : WWWaitResultFailed];
+    }
+    else {
+        id<WWBluetoothLEConnectDelegate> delegate = self.connectDelegate;
+        if (![delegate respondsToSelector:@selector(ble:didConnect:result:)]) {
+            return;
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [delegate ble:self didConnect:context.peripheral result:success];
+        });
+    }
+}
+
+- (void)failConnectionContextAndDisconnect:(WWBLEOperationContext *)context
+{
+    NSString *key = [self peripheralKey:context.peripheral];
+    if (_connectionContexts[key] != context) {
+        return;
+    }
+    [_silentDisconnects addObject:key];
+    [_pendingDisconnects addObject:key];
+    [self finishConnectionContext:context success:NO];
+    [_centeralManager cancelPeripheralConnection:context.peripheral];
+}
+
+- (BOOL)startReadForPeripheral:(CBPeripheral *)peripheral
+                characteristic:(WWCharacteristic *)characteristic
+                   synchronous:(BOOL)synchronous
+                       context:(WWBLEOperationContext **)contextOut
+{
+    if (peripheral == nil || characteristic == nil || !characteristic.isHaveValue) {
+        return NO;
+    }
+    WWCharacteristic *characteristicSnapshot = [self snapshotOfCharacteristic:characteristic];
+
+    __block BOOL started = NO;
+    __block WWBLEOperationContext *context = nil;
+    [self performOnBLEQueueSync:^{
+        if (peripheral.state != CBPeripheralStateConnected ||
+            [self->_pendingDisconnects containsObject:[self peripheralKey:peripheral]]) {
+            return;
+        }
+
+        CBService *service = [self getService:characteristicSnapshot.serviceID fromPeripheral:peripheral];
+        CBCharacteristic *nativeCharacteristic = [self getCharacteristic:characteristicSnapshot.characteristicID fromService:service];
+        if (nativeCharacteristic == nil ||
+            (nativeCharacteristic.properties & CBCharacteristicPropertyRead) == 0) {
+            return;
+        }
+
+        NSString *key = [self operationKeyForPeripheral:peripheral characteristic:characteristicSnapshot];
+        WWBLEOperationContext *receiveContext = self->_receiveContexts[[self peripheralKey:peripheral]];
+        if (self->_readContexts[key] != nil ||
+            (receiveContext != nil && [receiveContext.characteristic isEqual:characteristicSnapshot])) {
+            return;
+        }
+
+        context = [[WWBLEOperationContext alloc] init];
+        context.peripheral = peripheral;
+        context.characteristic = characteristicSnapshot;
+        context.synchronous = synchronous;
+        if (synchronous) {
+            context.event = [[WWWaitEvent alloc] init];
+            [context.event prepareWait];
+        }
+        self->_readContexts[key] = context;
+        [peripheral readValueForCharacteristic:nativeCharacteristic];
+        started = YES;
+    }];
+
+    if (contextOut != NULL) {
+        *contextOut = context;
+    }
+    return started;
+}
+
+- (void)finishReadContext:(WWBLEOperationContext *)context data:(NSData *)data success:(BOOL)success
+{
+    NSString *key = [self operationKeyForPeripheral:context.peripheral characteristic:context.characteristic];
+    if (_readContexts[key] != context) {
+        return;
+    }
+    [_readContexts removeObjectForKey:key];
+
+    if (context.abandoned) {
+        return;
+    }
+
+    if (context.synchronous) {
+        context.data = data;
+        [context.event waitOver:success ? WWWaitResultSuccess : WWWaitResultFailed];
+    }
+    else {
+        id<WWBluetoothLEDelegate> delegate = self.bleDelegate;
+        if (!success || ![delegate respondsToSelector:@selector(ble:didReceiveData:characteristic:data:)]) {
+            return;
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [delegate ble:self
+           didReceiveData:context.peripheral
+           characteristic:context.characteristic
+                     data:data];
+        });
+    }
+}
+
+- (void)cancelOperationsForPeripheral:(CBPeripheral *)peripheral
+{
+    NSString *peripheralKey = [self peripheralKey:peripheral];
+    WWBLEOperationContext *connectionContext = _connectionContexts[peripheralKey];
+    if (connectionContext != nil) {
+        [self finishConnectionContext:connectionContext success:NO];
+    }
+
+    WWBLEOperationContext *receiveContext = _receiveContexts[peripheralKey];
+    if (receiveContext != nil) {
+        [_receiveContexts removeObjectForKey:peripheralKey];
+        [receiveContext.event waitOver:WWWaitResultFailed];
+    }
+
+    for (NSString *key in [_notifyContexts.allKeys copy]) {
+        WWBLEOperationContext *context = _notifyContexts[key];
+        if ([[self peripheralKey:context.peripheral] isEqualToString:peripheralKey]) {
+            [_notifyContexts removeObjectForKey:key];
+            [context.event waitOver:WWWaitResultFailed];
+        }
+    }
+
+    for (NSString *key in [_readContexts.allKeys copy]) {
+        WWBLEOperationContext *context = _readContexts[key];
+        if ([[self peripheralKey:context.peripheral] isEqualToString:peripheralKey]) {
+            [_readContexts removeObjectForKey:key];
+            [context.event waitOver:WWWaitResultFailed];
+        }
+    }
+
+    WWBLEWriteContext *writeContext = _writeContexts[peripheralKey];
+    if (writeContext != nil) {
+        [self finishWriteContext:writeContext success:NO];
+    }
+}
+
+- (void)cancelAllOperations
+{
+    NSMutableDictionary<NSString *, CBPeripheral *> *peripherals = [NSMutableDictionary dictionary];
+    for (WWBLEOperationContext *context in _connectionContexts.allValues) {
+        peripherals[[self peripheralKey:context.peripheral]] = context.peripheral;
+    }
+    for (WWBLEOperationContext *context in _receiveContexts.allValues) {
+        peripherals[[self peripheralKey:context.peripheral]] = context.peripheral;
+    }
+    for (WWBLEOperationContext *context in _notifyContexts.allValues) {
+        peripherals[[self peripheralKey:context.peripheral]] = context.peripheral;
+    }
+    for (WWBLEOperationContext *context in _readContexts.allValues) {
+        peripherals[[self peripheralKey:context.peripheral]] = context.peripheral;
+    }
+    for (WWBLEWriteContext *context in _writeContexts.allValues) {
+        peripherals[[self peripheralKey:context.peripheral]] = context.peripheral;
+    }
+    for (CBPeripheral *peripheral in peripherals.allValues) {
+        [self cancelOperationsForPeripheral:peripheral];
+    }
+    [_silentDisconnects removeAllObjects];
+    [_pendingDisconnects removeAllObjects];
+}
+
+- (BOOL)isScanning
+{
+    __block BOOL scanning;
+    [self performOnBLEQueueSync:^{
+        scanning = self->_isScanning;
+    }];
+    return scanning;
+}
+
+- (WWBleLocalState)loaclState
+{
+    __block WWBleLocalState state;
+    [self performOnBLEQueueSync:^{
+        state = self->_loaclState;
+    }];
+    return state;
 }
 
 
@@ -144,17 +699,19 @@ BOOL ble_isOpenLog = false;
  */
 -(BOOL)startScan:(BOOL)isPowerSaving services:(NSArray <NSString *> *)serviceUUIDs
 {
-    if (_centeralManager.state != CBCentralManagerStatePoweredOn) {
-        return NO;
-    }
-    
     NSMutableArray<CBUUID *> * uuids = nil;
     
-    if (serviceUUIDs != nil) {
+    if (serviceUUIDs.count > 0) {
+        uuids = [NSMutableArray arrayWithCapacity:serviceUUIDs.count];
         
         for (NSString *str in serviceUUIDs) {
-            
-            CBUUID *temp = [CBUUID UUIDWithString:str];
+            CBUUID *temp = nil;
+            @try {
+                temp = [CBUUID UUIDWithString:str];
+            }
+            @catch (__unused NSException *exception) {
+                temp = nil;
+            }
             
             if (temp == nil) {
                 BLELog(@"无效uuid");
@@ -166,18 +723,18 @@ BOOL ble_isOpenLog = false;
         }
     }
     
-    //省电模式
-    if (isPowerSaving) {
-        [_centeralManager scanForPeripheralsWithServices:uuids options:nil];
-    }
-    else {
-        [_centeralManager scanForPeripheralsWithServices:uuids options:@{CBCentralManagerScanOptionAllowDuplicatesKey:@(true)}];
-    }
-    
-    _isScanning = true;
-    
-    
-    return YES;
+    __block BOOL started = NO;
+    [self performOnBLEQueueSync:^{
+        if (self->_centeralManager.state != CBManagerStatePoweredOn) {
+            return;
+        }
+
+        NSDictionary *options = isPowerSaving ? nil : @{CBCentralManagerScanOptionAllowDuplicatesKey:@YES};
+        [self->_centeralManager scanForPeripheralsWithServices:uuids options:options];
+        self->_isScanning = YES;
+        started = YES;
+    }];
+    return started;
 }
 
 
@@ -187,8 +744,10 @@ BOOL ble_isOpenLog = false;
  */
 -(void)stopScan
 {
-    [_centeralManager stopScan];
-    _isScanning = false;
+    [self performOnBLEQueueSync:^{
+        [self->_centeralManager stopScan];
+        self->_isScanning = NO;
+    }];
 }
 
 /**
@@ -199,17 +758,19 @@ BOOL ble_isOpenLog = false;
  */
 - (NSArray<CBPeripheral *> *)getSystemConnectDevices:(NSArray<NSString *> *)serviceUUIDs
 {
-    if (_centeralManager.state != CBCentralManagerStatePoweredOn) {
-        return nil;
-    }
-    
     NSMutableArray<CBUUID *> *uuids = @[].mutableCopy;
     
     if (serviceUUIDs != nil) {
         
         for (NSString *str in serviceUUIDs) {
             
-            CBUUID *temp = [CBUUID UUIDWithString:str];
+            CBUUID *temp = nil;
+            @try {
+                temp = [CBUUID UUIDWithString:str];
+            }
+            @catch (__unused NSException *exception) {
+                temp = nil;
+            }
             
             if (temp == nil) {
                 BLELog(@"无效uuid");
@@ -221,9 +782,17 @@ BOOL ble_isOpenLog = false;
         }
     }
     
-    NSArray<CBPeripheral *> *arr = [_centeralManager retrieveConnectedPeripheralsWithServices:uuids];
-    
-    return arr;
+    if (uuids.count == 0) {
+        return @[];
+    }
+
+    __block NSArray<CBPeripheral *> *devices = nil;
+    [self performOnBLEQueueSync:^{
+        if (self->_centeralManager.state == CBManagerStatePoweredOn) {
+            devices = [self->_centeralManager retrieveConnectedPeripheralsWithServices:uuids];
+        }
+    }];
+    return devices;
 }
 
 /**
@@ -235,7 +804,17 @@ BOOL ble_isOpenLog = false;
  */
 -(CBPeripheral *)getPeripheral:(NSString *)identifyUUID
 {
-    NSArray *peris = [_centeralManager retrievePeripheralsWithIdentifiers:@[[[NSUUID alloc] initWithUUIDString:identifyUUID]]];
+    NSUUID *identifier = [[NSUUID alloc] initWithUUIDString:identifyUUID];
+    if (identifier == nil) {
+        return nil;
+    }
+
+    __block NSArray *peris = nil;
+    [self performOnBLEQueueSync:^{
+        if (self->_centeralManager.state == CBManagerStatePoweredOn) {
+            peris = [self->_centeralManager retrievePeripheralsWithIdentifiers:@[identifier]];
+        }
+    }];
     if (peris.count > 0) {
         return peris[0];
     }
@@ -255,22 +834,52 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)synchronizedConnect:(CBPeripheral *)peripheral time:(NSUInteger)timeOut
 {
+    if ([NSThread isMainThread] || [self isOnBLEQueue]) {
+        BLELog(@"同步连接不能在主线程调用");
+        return false;
+    }
+
     if (peripheral == nil) {
         BLELog(@"设备不能为空");
         return false;
     }
     
-    _isMyDisconnected = false;
-    
-    [_centeralManager connectPeripheral:peripheral options:nil];
-    
-    WWWaitResult result = [_connectEvent waitSignle:timeOut];
+    WWBLEOperationContext *context = [[WWBLEOperationContext alloc] init];
+    context.peripheral = peripheral;
+    context.synchronous = YES;
+    context.event = [[WWWaitEvent alloc] init];
+    [context.event prepareWait];
+
+    __block BOOL started = NO;
+    [self performOnBLEQueueSync:^{
+        NSString *key = [self peripheralKey:peripheral];
+        if (self->_centeralManager.state == CBManagerStatePoweredOn &&
+            self->_connectionContexts[key] == nil &&
+            ![self->_pendingDisconnects containsObject:key]) {
+            self->_connectionContexts[key] = context;
+            [self->_centeralManager connectPeripheral:peripheral options:nil];
+            started = YES;
+        }
+    }];
+    if (!started) {
+        return false;
+    }
+
+    WWWaitResult result = [context.event waitPrepared:timeOut];
     
     if (result == WWWaitResultSuccess) {
         return true;
     }
     else{
-        [self disconnect:peripheral];
+        [self performOnBLEQueueSync:^{
+            NSString *key = [self peripheralKey:peripheral];
+            if (self->_connectionContexts[key] == context) {
+                context.abandoned = YES;
+                [self->_silentDisconnects addObject:key];
+                [self->_pendingDisconnects addObject:key];
+                [self->_centeralManager cancelPeripheralConnection:peripheral];
+            }
+        }];
         return false;
     }
     
@@ -286,18 +895,35 @@ BOOL ble_isOpenLog = false;
 {
     if (peripheral == nil) {
         BLELog(@"设备不能为空");
-        if (_connectDelegate != nil && [_connectDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
+        id<WWBluetoothLEConnectDelegate> delegate = self.connectDelegate;
+        if ([delegate respondsToSelector:@selector(ble:didConnect:result:)]) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                [self.connectDelegate ble:self didConnect:nil result:false];
+                [delegate ble:self didConnect:nil result:false];
             });
         }
         return ;
     }
 
     
-    _isMyDisconnected = false;
-    
-    [_centeralManager connectPeripheral:peripheral options:nil];
+    [self performOnBLEQueueAsync:^{
+        NSString *key = [self peripheralKey:peripheral];
+        if (self->_centeralManager.state != CBManagerStatePoweredOn ||
+            self->_connectionContexts[key] != nil ||
+            [self->_pendingDisconnects containsObject:key]) {
+            id<WWBluetoothLEConnectDelegate> delegate = self.connectDelegate;
+            if ([delegate respondsToSelector:@selector(ble:didConnect:result:)]) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [delegate ble:self didConnect:peripheral result:NO];
+                });
+            }
+            return;
+        }
+
+        WWBLEOperationContext *context = [[WWBLEOperationContext alloc] init];
+        context.peripheral = peripheral;
+        self->_connectionContexts[key] = context;
+        [self->_centeralManager connectPeripheral:peripheral options:nil];
+    }];
 }
 
 
@@ -309,7 +935,7 @@ BOOL ble_isOpenLog = false;
  */
 -(void)disconnect:(CBPeripheral *)peripheral
 {
-    [self disconnect:peripheral callBack:true];
+    [self disconnect:peripheral callBack:NO];
 }
 
 /**
@@ -324,12 +950,28 @@ BOOL ble_isOpenLog = false;
         return;
     }
     
-    _isMyDisconnected = !isCallBack;
-    
-    [_centeralManager cancelPeripheralConnection:peripheral];
-    
-    //结束所有的等待
-    [self cancelAllWaitting];
+    [self performOnBLEQueueAsync:^{
+        NSString *key = [self peripheralKey:peripheral];
+        if (peripheral.state == CBPeripheralStateDisconnected &&
+            self->_connectionContexts[key] == nil) {
+            if ([self->_pendingDisconnects containsObject:key]) {
+                return;
+            }
+            [self->_silentDisconnects removeObject:key];
+            [self->_pendingDisconnects removeObject:key];
+            [self cancelOperationsForPeripheral:peripheral];
+            return;
+        }
+        [self->_pendingDisconnects addObject:key];
+        if (isCallBack) {
+            [self->_silentDisconnects removeObject:key];
+        }
+        else {
+            [self->_silentDisconnects addObject:key];
+        }
+        [self cancelOperationsForPeripheral:peripheral];
+        [self->_centeralManager cancelPeripheralConnection:peripheral];
+    }];
 }
 
 
@@ -347,30 +989,25 @@ BOOL ble_isOpenLog = false;
         return nil;
     }
     
-    //未连接
-    if (peripheral.state != CBPeripheralStateConnected) {
-        BLELog(@"设备未连接");
-        return nil;
-    }
-    
-    NSMutableDictionary<NSString *, NSArray<WWCharacteristic *> *> *dict = [NSMutableDictionary dictionary];
-    
-    for (CBService *service in peripheral.services) {
-        
-        NSMutableArray <WWCharacteristic *> *array = [NSMutableArray array];
-        
-        for (CBCharacteristic *charact in service.characteristics) {
-            WWCharacteristic *c = [[WWCharacteristic alloc] init];
-            c.serviceID = service.UUID.UUIDString;
-            c.characteristicID = charact.UUID.UUIDString;
-            [array addObject:c];
+    __block NSDictionary<NSString *, NSArray<WWCharacteristic *> *> *result = nil;
+    [self performOnBLEQueueSync:^{
+        if (peripheral.state != CBPeripheralStateConnected) {
+            return;
         }
-        
-        dict[service.UUID] = array;
-    }
 
-    
-    return dict;
+        NSMutableDictionary<NSString *, NSArray<WWCharacteristic *> *> *dict = [NSMutableDictionary dictionary];
+        for (CBService *service in peripheral.services) {
+            NSMutableArray<WWCharacteristic *> *array = [NSMutableArray array];
+            for (CBCharacteristic *characteristic in service.characteristics) {
+                WWCharacteristic *model = [[WWCharacteristic alloc] initWithServiceID:service.UUID.UUIDString
+                                                                      characteristicID:characteristic.UUID.UUIDString];
+                [array addObject:model];
+            }
+            dict[service.UUID.UUIDString] = array;
+        }
+        result = [dict copy];
+    }];
+    return result;
 }
 
 
@@ -389,34 +1026,21 @@ BOOL ble_isOpenLog = false;
         return 0;
     }
     
-    //未连接
-    if (peripheral.state != CBPeripheralStateConnected) {
-        BLELog(@"设备未连接");
-        return 0;
-    }
-    
     if (characteristic == nil || !characteristic.isHaveValue) {
         BLELog(@"characteristic 无效")
         return 0;
     }
     
-    //获取BleServicesNotify服务
-    CBService *ser = [self getService:characteristic.serviceID fromPeripheral:peripheral];
-    
-    if (ser == nil) {
-        BLELog(@"characteristic serviceID不存在");
-        return 0;
-    }
-    
-    //获取BleNotifyCharacteristicsReceive特征值
-    CBCharacteristic *charact = [self getCharacteristic:characteristic.characteristicID fromService:ser];
-    
-    if (charact == nil) {
-        BLELog(@"bleWithNotify characteristicID不存在");
-        return 0;
-    }
-    
-    return charact.properties;
+    __block CBCharacteristicProperties properties = 0;
+    [self performOnBLEQueueSync:^{
+        if (peripheral.state != CBPeripheralStateConnected) {
+            return;
+        }
+        CBService *service = [self getService:characteristic.serviceID fromPeripheral:peripheral];
+        CBCharacteristic *nativeCharacteristic = [self getCharacteristic:characteristic.characteristicID fromService:service];
+        properties = nativeCharacteristic.properties;
+    }];
+    return properties;
 }
 
 /**
@@ -430,7 +1054,8 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)openNofity:(CBPeripheral *)peripheral
 {
-    return [self openNofity:peripheral characteristic:_commonResponeNotifyCharacteristic];
+    WWCharacteristic *characteristic = self.commonResponeNotifyCharacteristic;
+    return [self openNofity:peripheral characteristic:characteristic];
 }
 
 
@@ -446,7 +1071,8 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)synchronizedOpenNofity:(CBPeripheral *)peripheral time:(NSUInteger)timeOut
 {
-    return [self synchronizedOpenNofity:peripheral characteristic:_commonResponeNotifyCharacteristic time:timeOut];
+    WWCharacteristic *characteristic = self.commonResponeNotifyCharacteristic;
+    return [self synchronizedOpenNofity:peripheral characteristic:characteristic time:timeOut];
 }
 
 
@@ -461,7 +1087,8 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)closeNofity:(CBPeripheral *)peripheral
 {
-    return [self closeNofity:peripheral characteristic:_commonResponeNotifyCharacteristic];
+    WWCharacteristic *characteristic = self.commonResponeNotifyCharacteristic;
+    return [self closeNofity:peripheral characteristic:characteristic];
 }
 
 
@@ -477,7 +1104,8 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)synchronizedCloseNofity:(CBPeripheral *)peripheral time:(NSUInteger)timeOut
 {
-    return [self synchronizedCloseNofity:peripheral characteristic:_commonResponeNotifyCharacteristic time:timeOut];
+    WWCharacteristic *characteristic = self.commonResponeNotifyCharacteristic;
+    return [self synchronizedCloseNofity:peripheral characteristic:characteristic time:timeOut];
 }
 
 /**
@@ -492,48 +1120,11 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)openNofity:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic
 {
-    if (peripheral == nil) {
-        BLELog(@"设备不能为空");
-        return false;
-    }
-    
-    //未连接
-    if (peripheral.state != CBPeripheralStateConnected) {
-        BLELog(@"设备未连接");
-        return false;
-    }
-
-    if (characteristic == nil || !characteristic.isHaveValue) {
-        BLELog(@"characteristic 无效")
-        return false;
-    }
-    
-    //获取BleServicesNotify服务
-    CBService *ser = [self getService:characteristic.serviceID fromPeripheral:peripheral];
-    
-    if (ser == nil) {
-        BLELog(@"characteristic serviceID不存在");
-        return false;
-    }
-    
-    //获取BleNotifyCharacteristicsReceive特征值
-    CBCharacteristic *charact = [self getCharacteristic:characteristic.characteristicID fromService:ser];
-    
-    if (charact == nil) {
-        BLELog(@"bleWithNotify characteristicID不存在");
-        return false;
-    }
-    
-    if ( ((charact.properties & CBCharacteristicPropertyNotify) == 0x00) &&
-        ((charact.properties & CBCharacteristicPropertyIndicate) == 0x00)) {
-        BLELog(@"characteristic 该特征值无通知属性")
-        return false;
-    }
-    
-    //打开通知
-    [peripheral setNotifyValue:true forCharacteristic:charact];
-    
-    return true;
+    return [self startNotificationForPeripheral:peripheral
+                                  characteristic:characteristic
+                                          enable:YES
+                                     synchronous:NO
+                                         context:NULL];
 }
 
 
@@ -550,14 +1141,19 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)synchronizedOpenNofity:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic time:(NSUInteger)timeOut
 {
-    BOOL isResult = [self openNofity:peripheral characteristic:characteristic];
-    if (!isResult) {
-        return false;
+    if ([NSThread isMainThread] || [self isOnBLEQueue]) {
+        return NO;
     }
-    
-    WWWaitResult result = [_notifyEvent waitSignle:timeOut];
-    
-    return (result == WWWaitResultSuccess);
+
+    WWBLEOperationContext *context = nil;
+    if (![self startNotificationForPeripheral:peripheral
+                               characteristic:characteristic
+                                       enable:YES
+                                  synchronous:YES
+                                      context:&context]) {
+        return NO;
+    }
+    return [self waitForNotificationContext:context timeout:timeOut];
     
 }
 
@@ -573,36 +1169,11 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)closeNofity:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic
 {
-    if (characteristic == nil || !characteristic.isHaveValue) {
-        BLELog(@"characteristic 无效")
-        return false;
-    }
-    
-    //获取BleServicesNotify服务
-    CBService *ser = [self getService:characteristic.serviceID fromPeripheral:peripheral];
-    
-    if (ser == nil) {
-        BLELog(@"characteristic serviceID不存在");
-        return false;
-    }
-    
-    //获取BleNotifyCharacteristicsReceive特征值
-    CBCharacteristic *charact = [self getCharacteristic:characteristic.characteristicID fromService:ser];
-    
-    if (charact == nil) {
-        BLELog(@"bleWithNotify characteristicID不存在");
-        return false;
-    }
-    
-    if ( (charact.properties & CBCharacteristicPropertyNotify) == 0x00) {
-        BLELog(@"characteristic 该特征值无通知属性")
-        return false;
-    }
-    
-    //打开通知
-    [peripheral setNotifyValue:false forCharacteristic:charact];
-    
-    return true;
+    return [self startNotificationForPeripheral:peripheral
+                                  characteristic:characteristic
+                                          enable:NO
+                                     synchronous:NO
+                                         context:NULL];
 }
 
 
@@ -619,14 +1190,19 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)synchronizedCloseNofity:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic time:(NSUInteger)timeOut
 {
-    BOOL isResult = [self closeNofity:peripheral characteristic:characteristic];
-    if (!isResult) {
-        return false;
+    if ([NSThread isMainThread] || [self isOnBLEQueue]) {
+        return NO;
     }
-    
-    WWWaitResult result = [_notifyEvent waitSignle:timeOut];
-    
-    return (result == WWWaitResultSuccess);
+
+    WWBLEOperationContext *context = nil;
+    if (![self startNotificationForPeripheral:peripheral
+                               characteristic:characteristic
+                                       enable:NO
+                                  synchronous:YES
+                                      context:&context]) {
+        return NO;
+    }
+    return [self waitForNotificationContext:context timeout:timeOut];
 }
 
 
@@ -642,7 +1218,8 @@ BOOL ble_isOpenLog = false;
  */
 -(BOOL)send:(CBPeripheral *)peripheral value:(NSData *)data
 {
-    return [self send:peripheral characteristic:_commonSendCharacteristic value:data];
+    WWCharacteristic *characteristic = self.commonSendCharacteristic;
+    return [self send:peripheral characteristic:characteristic value:data];
 }
 
 /**
@@ -658,7 +1235,8 @@ BOOL ble_isOpenLog = false;
  */
 -(NSData *)sendReceive:(CBPeripheral *)peripheral value:(NSData *)data time:(NSUInteger)timeOut
 {
-    return [self sendReceive:peripheral characteristic:_commonSendCharacteristic value:data time:true];
+    WWCharacteristic *characteristic = self.commonSendCharacteristic;
+    return [self sendReceive:peripheral characteristic:characteristic value:data time:timeOut];
 }
 
 /**
@@ -674,52 +1252,12 @@ BOOL ble_isOpenLog = false;
  */
 -(BOOL)send:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic value:(NSData *)data
 {
-    if (peripheral == nil) {
-        BLELog(@"下发设备不能为空");
-        return false;
-    }
-    
-    //未连接
-    if (peripheral.state != CBPeripheralStateConnected) {
-        BLELog(@"设备未连接");
-        return false;
-    }
-    
-    if (data == nil) {
-        BLELog(@"下发数据不能为空");
-        return  false;
-    }
-    
-    if (!characteristic.isHaveValue) {
-        
-        BLELog(@"发送特征值无效");
-        
-        return false;
-    }
-    
-    CBService * service = [self getService:characteristic.serviceID fromPeripheral:peripheral];
-    if (service == nil) {
-        
-        BLELog(@"发送特征值serviceID不存在");
-        
-        return false;
-    }
-    
-    CBCharacteristic  *charact = [self getCharacteristic:characteristic.characteristicID fromService:service];
-    if (charact == nil) {
-        
-        BLELog(@"发送特征值characteristicID不存在");
-        return false;
-    }
-    
-    //默认无响应
-    CBCharacteristicWriteType type = CBCharacteristicWriteWithoutResponse;
-    //有响应
-    if ( (charact.properties&CBCharacteristicPropertyWrite) != 0x00 ) {
-        type = CBCharacteristicWriteWithResponse;
-    }
-    
-    return [self send:peripheral characteristic:characteristic value:data type:type];
+    return [self startSend:peripheral
+            characteristic:characteristic
+                     value:data
+                      type:nil
+            notifyDelegate:YES
+           responseContext:nil];
 }
 
 /**
@@ -736,21 +1274,11 @@ BOOL ble_isOpenLog = false;
  */
 -(NSData *)sendReceive:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic value:(NSData *)data time:(NSUInteger)timeOut
 {
-    if (![self send:peripheral characteristic:characteristic value:data]) {
-        return nil;
-    }
-    
-    
-    NSMutableData *tempData = [NSMutableData data];
-    WWWaitResult result = [_receiveEvent waitSignle:timeOut];
-    if (result != WWWaitResultSuccess) {
-        return nil;
-    }
-    
-    [tempData appendData:_recvData];
-    _recvData = [NSMutableData data];
-    
-    return tempData;
+    return [self sendReceiveInternal:peripheral
+                      characteristic:characteristic
+                               value:data
+                                type:nil
+                             timeout:timeOut];
 }
 
 
@@ -769,79 +1297,12 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)send:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic value:(NSData *)data type:(CBCharacteristicWriteType)type
 {
-    if (peripheral == nil) {
-        BLELog(@"下发设备不能为空");
-        return false;
-    }
-    
-    //未连接
-    if (peripheral.state != CBPeripheralStateConnected) {
-        BLELog(@"设备未连接");
-        return false;
-    }
-    
-    if (data == nil) {
-        BLELog(@"下发数据不能为空");
-        return  false;
-    }
-    
-    if (!characteristic.isHaveValue) {
-        
-        BLELog(@"发送特征值无效");
-        
-        return false;
-    }
-    
-    CBService * service = [self getService:characteristic.serviceID fromPeripheral:peripheral];
-    if (service == nil) {
-        
-        BLELog(@"发送特征值serviceID不存在");
-        
-        return false;
-    }
-    
-    CBCharacteristic  *charact = [self getCharacteristic:characteristic.characteristicID fromService:service];
-    if (charact == nil) {
-        
-        BLELog(@"发送特征值characteristicID不存在");
-        return false;
-    }
-    
-    NSData *sendData = data;
-    //若代理存在，则调用代理
-    if (_managerData != nil && [_managerData respondsToSelector:@selector(ble:didPreSend:characteristic:data:)]) {
-        
-        sendData = [_managerData ble:self didPreSend:peripheral characteristic:characteristic data:data];
-    }
-    
-    if (_bAutoGroupSendData) {
-        
-        NSInteger BleDataLengthMax = _nGroupSendDataLen;
-        
-        NSMutableData *temp= [[NSMutableData alloc] initWithCapacity:0];
-        
-        NSUInteger nGroup = (sendData.length+BleDataLengthMax-1)/BleDataLengthMax;
-        _hasSendGroup = 0;
-        _totalSendGroup = nGroup;
-        
-        for (NSUInteger i=0; i<nGroup; i++)
-        {
-            [temp setLength:0];
-            if (i == (nGroup-1)) {
-                [temp appendBytes:(sendData.bytes+i*BleDataLengthMax) length:sendData.length-i*BleDataLengthMax ];
-            }
-            else{
-                [temp appendBytes:(sendData.bytes+i*BleDataLengthMax) length:BleDataLengthMax];
-            }
-            
-            [peripheral writeValue:temp forCharacteristic:charact type:type];
-        }
-    }
-    else {
-        [peripheral writeValue:sendData forCharacteristic:charact type:type];
-    }
-    
-    return true;
+    return [self startSend:peripheral
+            characteristic:characteristic
+                     value:data
+                      type:@(type)
+            notifyDelegate:YES
+           responseContext:nil];
 }
 
 /**
@@ -859,21 +1320,11 @@ BOOL ble_isOpenLog = false;
  */
 - (NSData *)sendReceive:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic value:(NSData *)data type:(CBCharacteristicWriteType)type time:(NSUInteger)timeOut
 {
-    if (![self send:peripheral characteristic:characteristic value:data type:type]) {
-        return nil;
-    }
-    
-    
-    NSMutableData *tempData = [NSMutableData data];
-    WWWaitResult result = [_receiveEvent waitSignle:timeOut];
-    if (result != WWWaitResultSuccess) {
-        return nil;
-    }
-    
-    [tempData appendData:_recvData];
-    _recvData = [NSMutableData data];
-    
-    return tempData;
+    return [self sendReceiveInternal:peripheral
+                      characteristic:characteristic
+                               value:data
+                                type:@(type)
+                             timeout:timeOut];
 }
 
 
@@ -889,52 +1340,10 @@ BOOL ble_isOpenLog = false;
  */
 - (BOOL)readData:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic
 {
-    if (peripheral == nil) {
-        BLELog(@"下发设备不能为空");
-        return false;
-    }
-    
-    //未连接
-    if (peripheral.state != CBPeripheralStateConnected) {
-        BLELog(@"设备未连接");
-        return false;
-    }
-    
-    
-    if (!characteristic.isHaveValue) {
-        
-        BLELog(@"发送特征值无效");
-        
-        return false;
-    }
-    
-    CBService * service = [self getService:characteristic.serviceID fromPeripheral:peripheral];
-    if (service == nil) {
-        
-        BLELog(@"发送特征值serviceID不存在");
-        
-        return false;
-    }
-    
-    CBCharacteristic  *charact = [self getCharacteristic:characteristic.characteristicID fromService:service];
-    if (charact == nil) {
-        
-        BLELog(@"发送特征值characteristicID不存在");
-        return false;
-    }
-    
-    //是否为可读服务
-    if ( (charact.properties&CBCharacteristicPropertyRead) == 0x00 ) {
-        
-        BLELog(@"发送特征值不支持读取");
-        return false;
-    }
-    
-    _readCharacteristic = characteristic;
-    
-    [peripheral readValueForCharacteristic:charact];
-    
-    return true;
+    return [self startReadForPeripheral:peripheral
+                         characteristic:characteristic
+                            synchronous:NO
+                                context:NULL];
 }
 
 
@@ -948,21 +1357,28 @@ BOOL ble_isOpenLog = false;
  */
 - (NSData *)synchronizedReadData:(CBPeripheral *)peripheral characteristic:(WWCharacteristic *)characteristic time:(NSUInteger)timeOut
 {
-    if (![self readData:peripheral characteristic:characteristic]) {
+    if ([NSThread isMainThread] || [self isOnBLEQueue]) {
         return nil;
     }
-    
-    
-    NSMutableData *tempData = [NSMutableData data];
-    WWWaitResult result = [_readEvent waitSignle:timeOut];
-    if (result != WWWaitResultSuccess) {
+
+    WWBLEOperationContext *context = nil;
+    if (![self startReadForPeripheral:peripheral
+                      characteristic:characteristic
+                         synchronous:YES
+                             context:&context]) {
         return nil;
     }
-    
-    [tempData appendData:_readData];
-    _readData = [NSMutableData data];
-    
-    return tempData;
+
+    WWWaitResult result = [context.event waitPrepared:timeOut];
+    if (result == WWWaitResultTimeOut) {
+        [self performOnBLEQueueSync:^{
+            NSString *key = [self operationKeyForPeripheral:peripheral characteristic:context.characteristic];
+            if (self->_readContexts[key] == context) {
+                context.abandoned = YES;
+            }
+        }];
+    }
+    return result == WWWaitResultSuccess ? context.data : nil;
 }
 
 
@@ -975,7 +1391,17 @@ BOOL ble_isOpenLog = false;
  */
 -(void)readRssi:(CBPeripheral *)peripheral
 {
-    [peripheral readRSSI];
+    if (peripheral == nil) {
+        return;
+    }
+    [self performOnBLEQueueAsync:^{
+        NSString *key = [self peripheralKey:peripheral];
+        if (self->_centeralManager.state == CBManagerStatePoweredOn &&
+            peripheral.state == CBPeripheralStateConnected &&
+            ![self->_pendingDisconnects containsObject:key]) {
+            [peripheral readRSSI];
+        }
+    }];
 }
 
 /**
@@ -983,17 +1409,43 @@ BOOL ble_isOpenLog = false;
  */
 - (void)cancelAllWaitting
 {
-    //连接等待
-    [_connectEvent waitOver:WWWaitResultFailed];
-    
-    //接受数据等待
-    [_receiveEvent waitOver:WWWaitResultFailed];
-    
-    //读取数据等待
-    [_readEvent waitOver:WWWaitResultFailed];
-    
-    //通知操作等待
-    [_notifyEvent waitOver:WWWaitResultFailed];
+    [self performOnBLEQueueSync:^{
+        for (WWBLEOperationContext *context in self->_connectionContexts.allValues) {
+            if (context.synchronous) {
+                context.abandoned = YES;
+                NSString *key = [self peripheralKey:context.peripheral];
+                [self->_silentDisconnects addObject:key];
+                [self->_pendingDisconnects addObject:key];
+                [context.event waitOver:WWWaitResultFailed];
+                [self->_centeralManager cancelPeripheralConnection:context.peripheral];
+            }
+        }
+        for (WWBLEOperationContext *context in self->_receiveContexts.allValues) {
+            context.abandoned = YES;
+            [context.event waitOver:WWWaitResultFailed];
+
+            NSString *key = [self peripheralKey:context.peripheral];
+            WWBLEWriteContext *writeContext = self->_writeContexts[key];
+            if (writeContext.responseContext == context) {
+                writeContext.abandoned = YES;
+                if (writeContext.type == CBCharacteristicWriteWithoutResponse) {
+                    [self finishWriteContext:writeContext success:NO];
+                }
+            }
+        }
+        for (WWBLEOperationContext *context in self->_notifyContexts.allValues) {
+            if (context.synchronous) {
+                context.abandoned = YES;
+                [context.event waitOver:WWWaitResultFailed];
+            }
+        }
+        for (WWBLEOperationContext *context in self->_readContexts.allValues) {
+            if (context.synchronous) {
+                context.abandoned = YES;
+                [context.event waitOver:WWWaitResultFailed];
+            }
+        }
+    }];
 }
 
 
@@ -1001,7 +1453,7 @@ BOOL ble_isOpenLog = false;
 -(CBService *)getService:(NSString *)serviceID fromPeripheral:(CBPeripheral *)peripheral
 {
     for (CBService *service in peripheral.services) {
-        if ([service.UUID.UUIDString isEqualToString:serviceID]) {
+        if ([service.UUID.UUIDString caseInsensitiveCompare:serviceID] == NSOrderedSame) {
             return service;
         }
     }
@@ -1014,7 +1466,7 @@ BOOL ble_isOpenLog = false;
 -(CBCharacteristic *)getCharacteristic:(NSString *)characteristicID fromService:(CBService *)service
 {
     for (CBCharacteristic *charact in service.characteristics) {
-        if ([charact.UUID.UUIDString isEqualToString:characteristicID]) {
+        if ([charact.UUID.UUIDString caseInsensitiveCompare:characteristicID] == NSOrderedSame) {
             return charact;
         }
     }
@@ -1028,34 +1480,39 @@ BOOL ble_isOpenLog = false;
 -(void)centralManagerDidUpdateState:(CBCentralManager *)central
 {
     switch (central.state) {
-        case CBCentralManagerStatePoweredOff:
+        case CBManagerStatePoweredOff:
             _loaclState = WWBleLocalStatePowerOff;
+            _isScanning = NO;
+            [self cancelAllOperations];
             BLELog(@"power off");
             break;
-        case CBCentralManagerStatePoweredOn:
+        case CBManagerStatePoweredOn:
             _loaclState = WWBleLocalStatePowerOn;
-            [self cancelAllWaitting];
             break;
         default:
             _loaclState = WWBleLocalStateUnsupported;
-            [self cancelAllWaitting];
+            _isScanning = NO;
+            [self cancelAllOperations];
             break;
     }
-    if([self.managerDelegate respondsToSelector:@selector(ble:didLocalState:)]) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self.managerDelegate ble:self didLocalState:self.loaclState];
-        });
-    }
-    
-    [[NSNotificationCenter defaultCenter] postNotificationName:kNotificationChangeLocalState object:@(_loaclState)];
+    WWBleLocalState localState = _loaclState;
+    NSNumber *state = @(localState);
+    id<WWBluetoothLEManagerDelegate> delegate = self.managerDelegate;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[NSNotificationCenter defaultCenter] postNotificationName:kNotificationChangeLocalState object:state];
+        if ([delegate respondsToSelector:@selector(ble:didLocalState:)]) {
+            [delegate ble:self didLocalState:localState];
+        }
+    });
 }
 
 //扫描信息代理
 -(void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral advertisementData:(NSDictionary *)advertisementData RSSI:(NSNumber *)RSSI
 {
-    if([self.managerDelegate respondsToSelector:@selector(ble:didScan:advertisementData:rssi:)]) {
+    id<WWBluetoothLEManagerDelegate> delegate = self.managerDelegate;
+    if([delegate respondsToSelector:@selector(ble:didScan:advertisementData:rssi:)]) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self.managerDelegate ble:self didScan:peripheral advertisementData:advertisementData rssi:RSSI];
+            [delegate ble:self didScan:peripheral advertisementData:advertisementData rssi:RSSI];
         });
     }
 }
@@ -1064,6 +1521,22 @@ BOOL ble_isOpenLog = false;
 -(void)centralManager:(CBCentralManager *)central didConnectPeripheral:(CBPeripheral *)peripheral
 {
     BLELog(@"WWBluetoothLE  连接ok %@",peripheral);
+    NSString *key = [self peripheralKey:peripheral];
+    if ([_pendingDisconnects containsObject:key]) {
+        [_centeralManager cancelPeripheralConnection:peripheral];
+        return;
+    }
+    WWBLEOperationContext *context = _connectionContexts[key];
+    if (context == nil) {
+        [_silentDisconnects addObject:key];
+        [_pendingDisconnects addObject:key];
+        [_centeralManager cancelPeripheralConnection:peripheral];
+        return;
+    }
+    if (context.abandoned) {
+        [_centeralManager cancelPeripheralConnection:peripheral];
+        return;
+    }
     peripheral.delegate = self;
     
     BLELog(@"扫描服务...");
@@ -1077,32 +1550,34 @@ BOOL ble_isOpenLog = false;
         BLELog(@"disconnect error = %@",error);
     }
     
-    if (!_isMyDisconnected) {
-        [[NSNotificationCenter defaultCenter] postNotificationName:kNotificationDisconnected object:nil];
-    }
-    
-    //被动断开
-    if(!_isMyDisconnected && self.connectDelegate && [self.connectDelegate respondsToSelector:@selector(ble:didDisconnect:)]) {
+    NSString *key = [self peripheralKey:peripheral];
+    BOOL silent = central.state != CBManagerStatePoweredOn ||
+        [_silentDisconnects containsObject:key];
+    [_silentDisconnects removeObject:key];
+    [_pendingDisconnects removeObject:key];
+
+    if (!silent) {
+        id<WWBluetoothLEConnectDelegate> delegate = self.connectDelegate;
         dispatch_async(dispatch_get_main_queue(), ^{
-            [self.connectDelegate ble:self didDisconnect:peripheral];
+            [[NSNotificationCenter defaultCenter] postNotificationName:kNotificationDisconnected object:nil];
+            if ([delegate respondsToSelector:@selector(ble:didDisconnect:)]) {
+                [delegate ble:self didDisconnect:peripheral];
+            }
         });
     }
-    
-    _isMyDisconnected = false;
-    
-    //结束所有的等待
-    
-    [self cancelAllWaitting];
+
+    [self cancelOperationsForPeripheral:peripheral];
 }
 
 //连接外围设备失败代理
 -(void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error
 {
-    //_connectEvent 并未等待 且实现了代理
-    if([_connectEvent getWaitStatus] != WWWaitResultWaiting && self.connectDelegate && [self.connectDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self.connectDelegate ble:self didConnect:peripheral result:NO];
-        });
+    NSString *key = [self peripheralKey:peripheral];
+    [_pendingDisconnects removeObject:key];
+    [_silentDisconnects removeObject:key];
+    WWBLEOperationContext *context = _connectionContexts[key];
+    if (context != nil) {
+        [self finishConnectionContext:context success:NO];
     }
 }
 
@@ -1110,61 +1585,40 @@ BOOL ble_isOpenLog = false;
 //搜索服务
 -(void)peripheral:(CBPeripheral *)peripheral didDiscoverServices:(NSError *)error
 {
-    if (!error) {
-        int count = (int)peripheral.services.count;
-        
-        for (int i=0; i<count; i++) {
-            CBService *service = [peripheral.services objectAtIndex:i];
-            [peripheral discoverCharacteristics:nil forService:service];
-        }
+    WWBLEOperationContext *context = _connectionContexts[[self peripheralKey:peripheral]];
+    if (context == nil || context.abandoned) {
+        return;
     }
-    else {
+
+    if (error != nil || peripheral.services.count == 0) {
         BLELog(@"扫描服务异常%@",error)
+        [self failConnectionContextAndDisconnect:context];
+        return;
     }
-    
+
+    context.pendingServices = [NSMutableSet setWithCapacity:peripheral.services.count];
+    for (CBService *service in peripheral.services) {
+        [context.pendingServices addObject:[NSValue valueWithNonretainedObject:service]];
+        [peripheral discoverCharacteristics:nil forService:service];
+    }
 }
 
 //扫描特征值
 -(void)peripheral:(CBPeripheral *)peripheral didDiscoverCharacteristicsForService:(CBService *)service error:(NSError *)error
 {
-    if (!error) {
-        
-        //最后一个服务
-        CBService *s = [peripheral.services objectAtIndex:(peripheral.services.count-1)];
-        if([service.UUID isEqual:s.UUID]) {
-            
-            if ([_connectEvent getWaitStatus] == WWWaitResultWaiting) {
-                
-                [_connectEvent waitOver:WWWaitResultSuccess];
-            }
-            else {
-                
-                if (_connectDelegate != nil && [_connectDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
-                    
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                       [self.connectDelegate ble:self didConnect:peripheral result:true];
-                    });
-                }
-            }
-            
-        }
+    WWBLEOperationContext *context = _connectionContexts[[self peripheralKey:peripheral]];
+    if (context == nil || context.abandoned) {
+        return;
     }
-    else {
-        
-        if ([_connectEvent getWaitStatus] == WWWaitResultWaiting) {
-            
-            [_connectEvent waitOver:WWWaitResultFailed];
-        }
-        else {
-            
-            if (_connectDelegate != nil && [_connectDelegate respondsToSelector:@selector(ble:didConnect:result:)]) {
-                
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.connectDelegate ble:self didConnect:peripheral result:false];
-                });
-                
-            }
-        }
+
+    if (error != nil) {
+        [self failConnectionContextAndDisconnect:context];
+        return;
+    }
+
+    [context.pendingServices removeObject:[NSValue valueWithNonretainedObject:service]];
+    if (context.pendingServices.count == 0) {
+        [self finishConnectionContext:context success:YES];
     }
 }
 
@@ -1172,161 +1626,120 @@ BOOL ble_isOpenLog = false;
 //通知状态更改
 -(void)peripheral:(CBPeripheral *)peripheral didUpdateNotificationStateForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error
 {
-    WWCharacteristic *charact = [[WWCharacteristic alloc] init];
-    charact.serviceID = characteristic.service.UUID.UUIDString;
-    charact.characteristicID = characteristic.UUID.UUIDString;
-    
-    if (error == nil) {
-        
-        //同步操作
-        if ([_notifyEvent getWaitStatus] == WWWaitResultWaiting) {
-            
-            [_notifyEvent waitOver:WWWaitResultSuccess];
-        }
-        //异步操作
-        else {
-            
-            if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didNotify:characteristic:enable:result:)]) {
-                
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.bleDelegate ble:self didNotify:peripheral characteristic:charact enable:characteristic.isNotifying result:true];
-                });
-            }
-        }
-        
+    WWCharacteristic *model = [[WWCharacteristic alloc] initWithServiceID:characteristic.service.UUID.UUIDString
+                                                         characteristicID:characteristic.UUID.UUIDString];
+    NSString *key = [self operationKeyForPeripheral:peripheral characteristic:model];
+    WWBLEOperationContext *context = _notifyContexts[key];
+    if (context == nil) {
+        return;
+    }
+
+    [_notifyContexts removeObjectForKey:key];
+    if (context.abandoned) {
+        return;
+    }
+    BOOL isNotifying = characteristic.isNotifying;
+    BOOL success = error == nil && isNotifying == context.enable;
+    if (context.synchronous) {
+        [context.event waitOver:success ? WWWaitResultSuccess : WWWaitResultFailed];
     }
     else {
-        
-        BLELog(@"通知操作异常：%@", error);
-        
-        //同步操作
-        if ([_notifyEvent getWaitStatus] == WWWaitResultWaiting) {
-            
-            [_notifyEvent waitOver:WWWaitResultFailed];
+        id<WWBluetoothLEDelegate> delegate = self.bleDelegate;
+        if (![delegate respondsToSelector:@selector(ble:didNotify:characteristic:enable:result:)]) {
+            return;
         }
-        //异步操作
-        else {
-            
-            if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didNotify:characteristic:enable:result:)]) {
-                
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.bleDelegate ble:self didNotify:peripheral characteristic:charact enable:characteristic.isNotifying result:false];
-                });
-            }
-        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [delegate ble:self
+                didNotify:peripheral
+           characteristic:model
+                   enable:isNotifying
+                   result:success];
+        });
     }
-    
 }
 
 -(void)peripheral:(CBPeripheral *)peripheral didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error
 {
-    
-    if (error == nil) {
-        
-        WWCharacteristic *charact = [[WWCharacteristic alloc] init];
-        charact.serviceID = characteristic.service.UUID.UUIDString;
-        charact.characteristicID = characteristic.UUID.UUIDString;
-        
-        if (_readCharacteristic != nil && [_readCharacteristic isEqual:charact]) {
-            
-            [self readData:peripheral updateValueForCharacteristic:characteristic];
-        }
-        else {
-            [self receiveData:peripheral updateValueForCharacteristic:characteristic];
-        }
-        
+    WWCharacteristic *model = [[WWCharacteristic alloc] initWithServiceID:characteristic.service.UUID.UUIDString
+                                                         characteristicID:characteristic.UUID.UUIDString];
+    NSString *key = [self operationKeyForPeripheral:peripheral characteristic:model];
+    WWBLEOperationContext *readContext = _readContexts[key];
+    if (readContext != nil) {
+        [self finishReadContext:readContext data:characteristic.value success:error == nil];
+        return;
     }
-    else {
+
+    if (error != nil) {
+        NSString *peripheralKey = [self peripheralKey:peripheral];
+        WWBLEOperationContext *responseContext = _receiveContexts[peripheralKey];
+        if (responseContext != nil && [responseContext.characteristic isEqual:model]) {
+            BOOL wasAbandoned = responseContext.abandoned;
+            responseContext.abandoned = YES;
+            if (wasAbandoned) {
+                [_receiveContexts removeObjectForKey:peripheralKey];
+            }
+            WWBLEWriteContext *writeContext = _writeContexts[peripheralKey];
+            if (writeContext.responseContext == responseContext) {
+                writeContext.abandoned = YES;
+                if (writeContext.type == CBCharacteristicWriteWithoutResponse) {
+                    [self finishWriteContext:writeContext success:NO];
+                }
+                else {
+                    [responseContext.event waitOver:WWWaitResultFailed];
+                }
+            }
+            else {
+                [responseContext.event waitOver:WWWaitResultFailed];
+            }
+            return;
+        }
         BLELog(@"接收数据出错：%@", error);
+        return;
     }
+
+    [self receiveData:peripheral updateValueForCharacteristic:characteristic];
 }
 
 -(void)peripheral:(CBPeripheral *)peripheral didWriteValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error
 {
-    WWCharacteristic *charact = [[WWCharacteristic alloc] init];
-    charact.serviceID = characteristic.service.UUID.UUIDString;
-    charact.characteristicID = characteristic.UUID.UUIDString;
-    
-    if (!error) {
-        _hasSendGroup++;
-        if (_hasSendGroup == _totalSendGroup) {
-            if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didSendData:characteristic:result:)]) {
-                
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.bleDelegate ble:self didSendData:peripheral characteristic:charact result:true];
-                });
-            }
-        }
+    WWBLEWriteContext *context = _writeContexts[[self peripheralKey:peripheral]];
+    if (context == nil || context.nativeCharacteristic != characteristic) {
+        return;
     }
-    else{
-        
+
+    if (context.abandoned) {
+        [self finishWriteContext:context success:NO];
+        return;
+    }
+
+    if (error != nil) {
         BLELog(@"下发数据失败：%@",error);
-        
-        if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didSendData:characteristic:result:)]) {
-            
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self.bleDelegate ble:self didSendData:peripheral characteristic:charact result:false];
-            });
-        }
+        [self finishWriteContext:context success:NO];
+        return;
+    }
+
+    [self pumpWriteContext:context];
+}
+
+- (void)peripheralIsReadyToSendWriteWithoutResponse:(CBPeripheral *)peripheral
+{
+    WWBLEWriteContext *context = _writeContexts[[self peripheralKey:peripheral]];
+    if (context != nil && context.type == CBCharacteristicWriteWithoutResponse) {
+        [self pumpWriteContext:context];
     }
 }
 
 -(void)peripheral:(CBPeripheral *)peripheral didReadRSSI:(NSNumber *)RSSI error:(NSError *)error
 {
-    if (error == nil) {
-        
-        if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didUpdateRssi:rssi:result:)]) {
-            
-            dispatch_async(dispatch_get_main_queue(), ^{
-               [self.bleDelegate ble:self didUpdateRssi:peripheral rssi:RSSI result:true];
-            });
-        }
-    }
-    else {
-        if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didUpdateRssi:rssi:result:)]) {
-            
-            dispatch_async(dispatch_get_main_queue(), ^{
-               [self.bleDelegate ble:self didUpdateRssi:peripheral rssi:RSSI result:false];
-            });
-        }
+    id<WWBluetoothLEDelegate> delegate = self.bleDelegate;
+    if ([delegate respondsToSelector:@selector(ble:didUpdateRssi:rssi:result:)]) {
+        BOOL success = error == nil;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [delegate ble:self didUpdateRssi:peripheral rssi:RSSI result:success];
+        });
     }
 }
 
-
-/**
- 读取数据返回
-
- @param peripheral 蓝牙设备
- @param characteristic 特征
- */
-- (void)readData:(CBPeripheral *)peripheral updateValueForCharacteristic:(CBCharacteristic *)characteristic
-{
-    WWCharacteristic *charact = [[WWCharacteristic alloc] init];
-    charact.serviceID = characteristic.service.UUID.UUIDString;
-    charact.characteristicID = characteristic.UUID.UUIDString;
-    
-    NSData *valueData = characteristic.value;
-    
-    if ([_readEvent getWaitStatus] == WWWaitResultWaiting) {
-        
-        [_readData resetBytesInRange:NSMakeRange(0, _readData.length)];
-        [_readData setLength:0];
-        [_readData appendData:characteristic.value];
-        [_readEvent waitOver:WWWaitResultSuccess];
-    }
-    else {
-        
-        if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didReceiveData:characteristic:data:)]) {
-            
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [self.bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:valueData];
-            });
-            
-            
-        }
-        
-    }
-}
 
 /**
  通知接收数据返回
@@ -1336,69 +1749,37 @@ BOOL ble_isOpenLog = false;
  */
 - (void)receiveData:(CBPeripheral *)peripheral updateValueForCharacteristic:(CBCharacteristic *)characteristic
 {
-    WWCharacteristic *charact = [[WWCharacteristic alloc] init];
-    charact.serviceID = characteristic.service.UUID.UUIDString;
-    charact.characteristicID = characteristic.UUID.UUIDString;
-    
+    WWCharacteristic *model = [[WWCharacteristic alloc] initWithServiceID:characteristic.service.UUID.UUIDString
+                                                         characteristicID:characteristic.UUID.UUIDString];
     NSData *valueData = characteristic.value;
-    
-    if (_managerData != nil && [_managerData respondsToSelector:@selector(ble:didPreReceive:characteristic:data:)]) {
-        
-        //预处理接收数据
-        NSData *tempData = [_managerData ble:self didPreReceive:peripheral characteristic:charact data:valueData];
-        
-        //不为空表示 接收数据完成
-        if (tempData != nil) {
-            
-            //返回响应
-            if (_commonResponeNotifyCharacteristic != nil && [charact isEqual:_commonResponeNotifyCharacteristic] && [_receiveEvent getWaitStatus] == WWWaitResultWaiting) {
-                
-                [_recvData resetBytesInRange:NSMakeRange(0, _recvData.length)];
-                [_recvData setLength:0];
-                [_recvData appendData:tempData];
-                
-                [_receiveEvent waitOver:WWWaitResultSuccess];
-                
-            }
-            else {
-                
-                if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didReceiveData:characteristic:data:)]) {
-                    
-                    //接收数据
-                    dispatch_async(dispatch_get_main_queue(), ^{
-                        [self.bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:tempData];
-                    });
-                }
-                
-            }
-            
-            
-        }
-        
+    id<WWBluetoothLEManagerData> managerData = self.managerData;
+    if ([managerData respondsToSelector:@selector(ble:didPreReceive:characteristic:data:)]) {
+        valueData = [managerData ble:self
+                       didPreReceive:peripheral
+                      characteristic:model
+                                data:valueData];
     }
-    else {
-        
-        //返回响应
-        if (_commonResponeNotifyCharacteristic != nil && [charact isEqual:_commonResponeNotifyCharacteristic] && [_receiveEvent getWaitStatus] == WWWaitResultWaiting) {
-            
-            [_recvData resetBytesInRange:NSMakeRange(0, _recvData.length)];
-            [_recvData setLength:0];
-            [_recvData appendData:valueData];
-            
-            [_receiveEvent waitOver:WWWaitResultSuccess];
-            
+    if (valueData == nil) {
+        return;
+    }
+
+    NSString *key = [self peripheralKey:peripheral];
+    WWBLEOperationContext *context = _receiveContexts[key];
+    if (context != nil && [context.characteristic isEqual:model]) {
+        [_receiveContexts removeObjectForKey:key];
+        if (context.abandoned) {
+            return;
         }
-        else {
-            
-            if (_bleDelegate != nil && [_bleDelegate respondsToSelector:@selector(ble:didReceiveData:characteristic:data:)]) {
-                
-                //接收数据
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [self.bleDelegate ble:self didReceiveData:peripheral characteristic:charact data:valueData];
-                });
-            }
-        }
-        
+        context.data = valueData;
+        [context.event waitOver:WWWaitResultSuccess];
+        return;
+    }
+
+    id<WWBluetoothLEDelegate> delegate = self.bleDelegate;
+    if ([delegate respondsToSelector:@selector(ble:didReceiveData:characteristic:data:)]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [delegate ble:self didReceiveData:peripheral characteristic:model data:valueData];
+        });
     }
 }
 

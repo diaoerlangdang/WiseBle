@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compile library for iOS 12
+        run: |
+          xcrun --sdk iphoneos clang \
+            -fsyntax-only \
+            -fobjc-arc \
+            -fmodules \
+            -fmodules-cache-path="$RUNNER_TEMP/WiseBleModuleCache" \
+            -isysroot "$(xcrun --sdk iphoneos --show-sdk-path)" \
+            -target arm64-apple-ios12.0 \
+            -Wall \
+            -Wextra \
+            -I WiseBle \
+            -I WiseBle/category \
+            WiseBle/*.m \
+            WiseBle/category/*.m
+
+      - name: Build Xcode targets without signing
+        run: |
+          xcodebuild \
+            -project WiseBleDemo.xcodeproj \
+            -scheme WiseBleDemo \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/WiseBleDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Validate podspec
+        run: pod lib lint wiseBle.podspec --allow-warnings --skip-import-validation
+
+      - name: Check patch whitespace
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            git diff --check "$BASE_SHA...HEAD"
+          else
+            git show --check --format=fuller HEAD
+          fi

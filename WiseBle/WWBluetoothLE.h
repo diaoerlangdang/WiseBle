@@ -166,6 +166,15 @@ typedef NS_ENUM(NSInteger, WWBleLocalState) {
 
 @interface WWBluetoothLE : NSObject
 
+/**
+ *  线程约束：所有 synchronized* 和 sendReceive:* 方法只能从后台线程调用；
+ *  在主线程或 WiseBle 的 BLE 队列调用会立即失败。
+ *  同步操作超时、被 cancelAllWaitting 取消，或 sendReceive 发送/响应失败后，
+ *  在旧 CoreBluetooth 回调到达或设备断开前，
+ *  会拒绝可能与旧回调混淆的重试。sendReceive 等待响应期间也会拒绝同设备的其他发送
+ *  以及响应特征读取，防止无法携带请求标识的回调污染其他操作。
+ */
+
 //蓝牙代理
 @property (nonatomic, weak) id<WWBluetoothLEManagerDelegate> managerDelegate;
 
